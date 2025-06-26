@@ -22,6 +22,8 @@ For further details, please visit [Chat Question-and-Answer Core Sample Applicat
 
 ### File Watcher Service
 
+![File Watcher Service Implementation Logic Flow](./_images/file-watcher-implementation-logic.png)
+
 The File Watcher Service runs alongside with HMI application on the Windows environment, consistently observing file system activities like creation, modification, and deletion. When changes are detected, it sends the pertinent file data over the network to the ChatQ&A service for ingestion and contextual processing, facilitating Retrieval-Augmented Generation (RAG) workflows.
 
 ---
