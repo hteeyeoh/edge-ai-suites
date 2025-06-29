@@ -14,7 +14,7 @@ This page provides detailed hardware, software, and platform requirements to hel
 
 Required Software:
 
-- Python 3.10+
+- Python 3.10
 
 ## Validation
 
