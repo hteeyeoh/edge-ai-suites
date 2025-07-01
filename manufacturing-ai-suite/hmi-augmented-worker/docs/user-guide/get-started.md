@@ -6,11 +6,11 @@ The `get started` guide explains how the HMI Augmented Worker application can be
 
 Installing the Windows side of the application is covered in detail in this documentation. The sample application has mandatory prerequisites that are covered in other documentation. The user is required to refer to the respective documentation for the details. The prerequisites listed below cover such dependencies.
 
-- Set up EMT based Type-2 Hypervisor host on target hardware. Refer to [EMT as Hypervisor](). EMT is a reference hypervisor which has been used for validation. Other Type-2 hypervisors can also be used as per user preference.
+- Set up EMT based Type-2 Hypervisor host on target hardware. EMT is a reference hypervisor which has been used for validation. Other Type-2 hypervisors can also be used as per user preference. Reference documentation link for EMT as VM host is provided in this [page](https://github.com/open-edge-platform/edge-microvisor-toolkit/tree/3.0/docs/developer-guide). The reader is advised to contact Intel representatives for further details on configuring EMT host VM and instructions on hosting a Guest OS. 
 
 - The sample application utilizes [Chat Question and Answer Core](https://github.com/open-edge-platform/edge-ai-libraries/tree/main/sample-applications/chat-question-and-answer-core) for the RAG pipeline. The documentation available with `chat question and answer core` covers the details of how to set it up and get it to run. The documentation here will more focus on how this application can be adapted and integrated in the context of HMI application.
 
-- Support hardware details are available in the [system requirements](./system-requirements.md) page.
+- Supported hardware details are available in the [system requirements](./system-requirements.md) page.
 
 ## Application Configuration
 
