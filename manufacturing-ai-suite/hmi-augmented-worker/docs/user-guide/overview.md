@@ -1,5 +1,5 @@
 # Overview
-HMI Augmented worker is a RAG enabled HMI application deployed on Type-2 hypervisors. Deploying RAG-enabled HMI applications in a Type-2 hypervisor setup allows for flexible and efficient resource utilization by running multiple operating systems on a single physical machine. 
+HMI Augmented worker is a RAG enabled HMI application deployed on Type-2 hypervisors. Deploying RAG-enabled HMI applications in a Type-2 hypervisor setup allows for flexible and efficient resource utilization by running multiple operating systems on a single physical machine.
 
 In this architecture, the HMI application operates within a Windows® virtual machine managed by a Type-2 hypervisor such as EMT. Meanwhile, the Retrieval-Augmented Generation (RAG) pipeline and supporting AI services are deployed natively on the host system, typically running EMT. This separation ensures robust isolation between the HMI and AI components, enabling independent scaling, maintenance, and updates. The setup leverages the strengths of both environments, providing a seamless integration that enhances operator experience while maintaining system reliability and security.
 
