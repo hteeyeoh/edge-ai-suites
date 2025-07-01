@@ -34,7 +34,39 @@ In addition to the File Watcher service, the WebUI interface to access the RAG f
 
 ## How to use the application?
 
-_Todo: List the steps to use the application_
+To use the application effectively, make sure that all the steps mentioned in the above [section](#application-configuration):
+
+- Deploy the ChatQnA Core
+
+  Deploy the ChatQnA Core using either the following methods:
+
+  - **Docker Compose deployment** (recommended for simpler setups): Use this for local or non-Kubernetes environments.
+
+  - **Helm-based deployment** (recommended for Kubernetes environments with KubeVirt support): This method allows you to manage both VMs and containers in a unified infrastructure but with more complicated framework setup.
+
+  Ensure that the deployment configuration aligns with your desired CPU/GPU allocation and model selection, as these impact performance and accuracy.
+
+- Build and Run the File Watcher Service
+
+  The File Watcher service must be compiled from source and deployed on the Windows VM. It monitors a configured folder for new files and updates the RAG context database accordingly.
+
+  - Refer to [Build File Watcher Service from Source](./how-to-build-from-source.md) for build instructions. Start the service on the Windows VM after deployment.
+
+- Access the WebUI
+
+  While the WebUI component can be independently developed by third-party users to suit specific use cases, this sample application reuses the WebUI bundled with the ChatQnA Core for demonstration purposes.
+
+  The WebUI runs on the same Windows VM and provides a simple interface to interact with the RAG pipeline.
+  Open a browser and navigate to the WebUI endpoint (e.g., http://<vm-ip>:<port>).
+
+- Interact with the RAG Pipeline
+
+  Once the system is running:
+
+  - Upload or place documents in the watched folder.
+  - Wait for the File Watcher to process and update the context.
+  - Submit questions via the WebUI.
+  - Receive context-aware answers powered by the configured LLM, embedding model, retriever, and reranker.
 
 ## Advanced Setup
 
