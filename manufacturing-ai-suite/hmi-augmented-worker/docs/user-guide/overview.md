@@ -6,7 +6,7 @@ In this architecture, the HMI application operates within a Windows® virtual ma
 RAG enabled HMI applications offers a substantial opportunity to enhance the capabilities of manufacturing machine operators, especially those who are less experienced. RAG enabled LLM applications deliver a user-friendly interface for troubleshooting advice, data summarization, and planning, utilizing a knowledge base tailored to specific deployments, including telemetry data, support logs, machine manuals, and production plans. This document details the use cases, architectures, and requirements for implementing RAG LLMs in HMI systems to improve operational efficiency, decision-making, and overall productivity for machine operators.
 
 ## How it works
-This section higlights the high level architecture of the sample application.
+This section highlights the high level architecture of the sample application.
 
 ### High-Level Architecture
 The system has a RAG pipeline based on Chat Question and Answer Core application alongside a typical HMI application. A knowledge base is initialized using the available documentation such as user manuals, past maintenance or support logs. When an operator detects a problem, either through direct observation or via the HMI application, they can consult the RAG pipeline for troubleshooting advice or explanations. After resolving the issue, the operator records a support log entry detailing the problem, the solution, and any relevant data. This log entry is then added to the knowledge base to aid in future troubleshooting efforts.
