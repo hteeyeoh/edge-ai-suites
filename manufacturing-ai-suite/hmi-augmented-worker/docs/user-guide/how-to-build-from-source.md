@@ -1,19 +1,19 @@
 # How to Build from Source
 
-This document provides step-by-step instructions for building the ChatQ&A Core microservices and File Watcher service from source. Please refer to the prerequiresites section in the guide to install the appropriate software dependencies.
+This document provides step-by-step instructions for building the `ChatQnA Core` sample application and File Watcher service from source. Please refer to the [prerequisites section](./get-started.md/#prerequisites) in the guide to install the appropriate software dependencies.
 
-## Build ChatQ&A Core from Source
+## Build ChatQnA Core from Source
 
-For detailed instructions on building from source, please visit the [Build from Source Guide](https://github.com/open-edge-platform/edge-ai-libraries/blob/main/sample-applications/chat-question-and-answer-core/docs/user-guide/build-from-source.md)
+For detailed instructions on building from source, please visit the [Build from Source Guide](https://github.com/open-edge-platform/edge-ai-libraries/blob/main/sample-applications/chat-question-and-answer-core/docs/user-guide/build-from-source.md).
 
-### ChatQ&A Core Docker Compose Deployment
+### ChatQnA Core Docker Compose Deployment
 
-For docker compose deployment instructions, please visit the [Running Application Container Guide](https://github.com/open-edge-platform/edge-ai-libraries/blob/main/sample-applications/chat-question-and-answer-core/docs/user-guide/build-from-source.md#running-the-application-container)
+For docker compose deployment instructions, please visit the [Running Application Container Guide](https://github.com/open-edge-platform/edge-ai-libraries/blob/main/sample-applications/chat-question-and-answer-core/docs/user-guide/build-from-source.md#running-the-application-container).
 
 
 ## Build File Watcher Service from Source
 
-In the `Windows environment`, the File Watcher Service operates in conjunction with the HMI application, continuously monitoring file system activities such as creation, modification, and deletion. Upon detecting any changes, it transmits the relevant file data over the network to the ChatQ&A service for ingestion and contextual processing, thereby supporting Retrieval-Augmented Generation (RAG) workflows.
+In the Windows® environment, the File Watcher Service operates in conjunction with the HMI application, continuously monitoring file system activities such as creation, modification, and deletion. Upon detecting any changes, it transmits the relevant file data over the network to the `ChatQnA Core` service for ingestion and contextual processing, thereby supporting Retrieval-Augmented Generation (RAG) workflows.
 
 ### Prerequisites
 
@@ -26,6 +26,9 @@ In the `Windows environment`, the File Watcher Service operates in conjunction w
 To build the File Watcher executable binary, follow these steps:
 
 1. Clone and download the source code by either using Git clone or downloading the source code as a ZIP file directly from the [repository](https://github.com/open-edge-platform/edge-ai-suites).
+   ```bash
+   git clone https://github.com/open-edge-platform/edge-ai-suites.git edge-ai-suites
+   ```
 
 2. Setup the Virtual Environment with python venv.
 
@@ -36,7 +39,7 @@ To build the File Watcher executable binary, follow these steps:
    - Create Virtual Environment.
 
      ```sh
-     # Replace `<venv_name>` with your preffered name.
+     # Replace `<venv_name>` with your preferred name.
      python -m venv <venv_name>
      ```
 
@@ -55,7 +58,7 @@ To build the File Watcher executable binary, follow these steps:
 4. Navigate to Project Folder downloaded in Step 1.
 
    ```sh
-   cd \path\to\your\project\manufacturing-ai-suite\hmi-augmented-worker\file_watcher
+   cd edge-ai-suites\manufacturing-ai-suite\hmi-augmented-worker\file_watcher
    ```
 
 5. Install Packages Inside the Virtual Environment.
@@ -74,7 +77,6 @@ To build the File Watcher executable binary, follow these steps:
 6. Setup Environment Variables using `.bat`.
 
    - Open and edit the values for the variables with your corresponding setup.
-
    - Then, execute the `.bat` file via below:
 
      ```sh
@@ -89,7 +91,7 @@ To build the File Watcher executable binary, follow these steps:
 
 8. Execute the File Watcher Service executable.
 
-   - Before starting the File Watcher Service, please do make sure that your backend ChatQ&A Core service is up.
+   - Before starting the File Watcher Service, please do make sure that your backend `ChatQnA Core` service is up.
 
      ```sh
      .\dist\file_watcher.exe
