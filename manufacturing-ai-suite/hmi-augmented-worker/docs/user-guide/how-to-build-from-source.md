@@ -73,6 +73,21 @@ To build the File Watcher executable binary, follow these steps:
    # Replace <your_proxy> and <port> to your network proxy and port number
    pip install -r requirements.txt --no-cache-dir --proxy <your_proxy>:<port>
    ```
+   On Windows®, typically, proxy information can be fetched using the command,
+   ```sh
+   netsh winhttp show proxy
+   ```
+   This will output one of the following two outputs:
+   ```sh
+   Current WinHTTP proxy settings:
+        Direct access (no proxy server).
+   ```
+   or
+   ```sh
+   Current WinHTTP proxy settings:
+        Proxy Server:  <your_proxy>:<port>
+        Bypass List:   <bypass_list>
+   ```
 
 6. Setup Environment Variables using `.bat`.
 
