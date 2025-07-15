@@ -13,7 +13,7 @@ For docker compose deployment instructions, visit the [Running Application Conta
 
 ## Build File Watcher Service from Source
 
-In the Windows® environment, the File Watcher Service operates in conjunction with the HMI application, continuously monitoring file system activities such as creation, modification, and deletion. Upon detecting any changes, it transmits the relevant file data over the network to the `ChatQnA Core` service for ingestion and contextual processing, thereby supporting Retrieval-Augmented Generation (RAG) workflows.
+In the Windows® environment, the File Watcher Service works with the HMI application to continuously monitor file system activities such as creation, modification, and deletion. When it detects any changes, it sends the relevant file data over the network to the `ChatQnA Core` service for ingestion and contextual processing, supporting Retrieval-Augmented Generation (RAG) workflows.
 
 ### Prerequisites
 
@@ -30,7 +30,7 @@ To build the File Watcher executable binary, follow these steps:
    git clone https://github.com/open-edge-platform/edge-ai-suites.git edge-ai-suites
    ```
 
-2. Setup the Virtual Environment with python venv.
+2. Set up the Virtual Environment with Python venv.
 
    - Open Command Prompt.
 
@@ -49,13 +49,13 @@ To build the File Watcher executable binary, follow these steps:
    <venv_name>\Scripts\activate
    ```
 
-   Once it's activated, you will see the environment name in parenthesis as below:
+   Once it's activated, the environment name appears in parentheses as follows:
 
    ```
    (venv_name) C:\Users\YourName\project>
    ```
 
-4. Navigate to Project Folder downloaded in Step 1.
+4. Navigate to the Project folder downloaded in Step 1.
 
    ```sh
    cd edge-ai-suites\manufacturing-ai-suite\hmi-augmented-worker\file_watcher
@@ -67,7 +67,7 @@ To build the File Watcher executable binary, follow these steps:
    pip install -r requirements.txt --no-cache-dir
    ```
 
-   If your system is behind a proxy, please try below:
+   If your system is behind a proxy, do as follows:
 
    ```sh
    # Replace <your_proxy> and <port> to your network proxy and port number
@@ -89,7 +89,7 @@ To build the File Watcher executable binary, follow these steps:
         Bypass List:   <bypass_list>
    ```
 
-6. Setup Environment Variables using `.bat`.
+6. Set up Environment Variables using `.bat`.
 
    - Open and edit the values for the variables with your corresponding setup.
    - Then, execute the `.bat` file as shown:
@@ -112,7 +112,7 @@ To build the File Watcher executable binary, follow these steps:
      .\dist\file_watcher.exe
      ```
 
-9. After the service starts, the file watcher continuously monitor file events occurring in the designated folder specified by `WATCH_DIRECTORY` in the `set_env_vars.bat` file, until it is stopped by a keyboard interrupt.
+9. After the service starts, the file watcher continuously monitors file events occurring in the designated folder specified by `WATCH_DIRECTORY` in the `set_env_vars.bat` file, until it is stopped by a keyboard interrupt.
 
 ## Troubleshooting
 
@@ -145,6 +145,6 @@ ERROR: Could not install packages due to an OSError: [WinError 206] The filename
      - Double-click on it and set its value to `1`.
      - Click OK to save the changes.
 
-After enabling long path support, you might need to restart your computer for the changes to take effect. Once done, try running your `pip install` command again.
+After enabling long path support, you may need to restart your computer for the changes to take effect. Once done, try running your `pip install` command again.
 
-If the issue persists, consider using a shorter path for your project or virtual environment as mentioned earlier. Moving your project to a directory with a shorter path can help avoid hitting the path length limit.
+If the issue persists, consider using a shorter path for your project or virtual environment, as mentioned earlier. Moving your project to a directory with a shorter path can help avoid hitting the path length limit.
