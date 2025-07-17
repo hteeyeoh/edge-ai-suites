@@ -12,7 +12,7 @@ The `HMI Augmented Worker` sample application show cases how RAG pipelines can b
   - [Architecture](./docs/user-guide/overview.md#high-level-architecture): High-level architecture.
 
 - **Getting Started**
-  - [Get Started](./docs/user-guide/get-started.md): Setup guides to getting started with the sample appplication.
+  - [Get Started](./docs/user-guide/get-started.md): Setup guides to getting started with the sample application.
   - [System Requirements](./docs/user-guide/system-requirements.md): Requirements include hardware and software to deploy the sample application.
 
 - **Advanced**
