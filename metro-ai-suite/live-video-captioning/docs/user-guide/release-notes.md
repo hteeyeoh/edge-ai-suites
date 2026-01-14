@@ -1,6 +1,7 @@
 # Release Notes
 
 ## 2026.1.3
+### Relase Date: 16 Jan 2026
 
 - Initial release of Live Video Captioning
 - Docker Compose stack integrating DLStreamer pipeline server, WebRTC signaling (mediamtx), TURN (coturn), and FastAPI dashboard

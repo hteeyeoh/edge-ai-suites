@@ -36,3 +36,7 @@ If the dashboard or APIs are not reachable, check whether the ports are already 
 - Larger VLMs require more compute and memory; try a smaller model.
 - Reduce `max_tokens`.
 - Ensure hardware acceleration and drivers are installed if using GPU.
+
+## Gemma model not working in GPU
+
+- Gemma model is not working on GPU. Only working on CPU.
