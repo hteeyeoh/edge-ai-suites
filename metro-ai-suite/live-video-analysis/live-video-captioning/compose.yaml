@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 name: ${PROJECT_NAME:-live-video-caption}
+
 services:
   mqtt-broker:
     image: eclipse-mosquitto:2.0
     hostname: mqtt-broker
     container_name: mqtt-broker
     environment:
-      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -39,8 +40,8 @@ services:
       - "${EVAM_HOST_PORT:-8040}:${EVAM_PORT:-8080}"
       - "8556:8554"
     environment:
-      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -98,8 +99,8 @@ services:
     image: bluenviron/mediamtx:1.11.3
     container_name: mediamtx
     environment:
-      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -126,8 +127,8 @@ services:
     image: coturn/coturn:latest
     container_name: coturn
     environment:
-      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -143,8 +144,8 @@ services:
     build: ./app
     container_name: video-caption-service
     environment:
-      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,live-metrics-service,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,live-metrics-service,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,live-metrics-service,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,mqtt-broker,live-metrics-service,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -159,6 +160,13 @@ services:
       - DEFAULT_RTSP_URL=${DEFAULT_RTSP_URL:-}
       - ENABLE_DETECTION_PIPELINE=${ENABLE_DETECTION_PIPELINE:-false}
       - METRICS_SERVICE_PORT=${METRICS_SERVICE_PORT:-9090}
+      # Embedding and vector
+      - ENABLE_EMBEDDING=${ENABLE_EMBEDDING:-false}
+      - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME}
+      - EMBEDDING_HOST=${EMBEDDING_HOST:-multimodal-embedding-serving}
+      - EMBEDDING_PORT=${EMBEDDING_PORT:-8000}
+      - VDMS_HOST=${VDMS_HOST:-vdms-vector-db}
+      - VDMS_PORT=${VDMS_PORT:-55555}
     volumes:
       - "./ov_models:/app/ov_models:ro"
       - "./ov_detection_models:/app/ov_detection_models:ro"
@@ -187,8 +195,8 @@ services:
     build: ../live-metrics-service
     container_name: live-metrics-service
     environment:
-      - no_proxy=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,${no_proxy}
-      - NO_PROXY=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,${NO_PROXY}
+      - no_proxy=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,vdms-vector-db,multimodal-embedding-serving,${NO_PROXY}
       - http_proxy=$http_proxy
       - HTTP_PROXY=$http_proxy
       - https_proxy=$https_proxy
@@ -227,7 +235,7 @@ services:
     environment:
       - http_proxy=${http_proxy}
       - https_proxy=${https_proxy}
-      - no_proxy=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,${no_proxy}
+      - no_proxy=localhost,127.0.0.1,video-caption-service,collector,live-metrics-service,vdms-vector-db,multimodal-embedding-serving,${no_proxy}
       - WEBSOCKET_URL=ws://live-metrics-service:9090/ws/collector
     depends_on:
       - live-metrics-service

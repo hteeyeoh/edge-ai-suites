@@ -14,6 +14,7 @@ from ..config import (
     PIPELINE_SERVER_URL,
     MQTT_TOPIC_PREFIX,
     WEBRTC_BITRATE,
+    ENABLE_EMBEDDING,
 )
 from ..models import RunInfo, StartRunRequest
 from ..models.requests import DEFAULT_PROMPT
@@ -53,6 +54,9 @@ async def start_run(req: StartRunRequest) -> RunInfo:
     # MQTT topic for this run's metadata
     mqtt_topic = f"{MQTT_TOPIC_PREFIX}"
 
+    # Enable frame publishing for embedding
+    publish_frame = bool(ENABLE_EMBEDDING)
+
     pipeline_name = (req.pipelineName or PIPELINE_NAME).strip() or PIPELINE_NAME
 
     start_url = f"{PIPELINE_SERVER_URL.rstrip('/')}/pipelines/user_defined_pipelines/{pipeline_name}"
@@ -70,7 +74,7 @@ async def start_run(req: StartRunRequest) -> RunInfo:
             "detection_threshold": req.detectionThreshold,
             "mqtt_publisher": {
                 "topic": f"{MQTT_TOPIC_PREFIX}/{run_id}",
-                "publish_frame": False,
+                "publish_frame": publish_frame,
             },
         },
     }

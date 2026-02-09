@@ -7,6 +7,9 @@ dependencies = [
     "fastapi[standard]==0.128.0",
     "uvicorn==0.40.0",
     "paho-mqtt==2.1.0",
+    "numpy==2.3.5",
+    "langchain-core>=0.3.80",
+    "langchain-vdms>=0.2.0",
 ]
 
 [build-system]

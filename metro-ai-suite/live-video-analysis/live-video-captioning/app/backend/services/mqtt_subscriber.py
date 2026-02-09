@@ -10,11 +10,11 @@ import asyncio
 import json
 import logging
 import time
-from typing import Callable, Optional
-
 import paho.mqtt.client as mqtt
+from typing import Callable, Optional
+from ..config import MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_TOPIC_PREFIX, ENABLE_EMBEDDING
+from .embedding import CaptionEmbeddings
 
-from ..config import MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_TOPIC_PREFIX
 
 logger = logging.getLogger("app.mqtt_subscriber")
 
@@ -41,6 +41,9 @@ class MQTTSubscriber:
         self._reconnect_delay = 1
         self._max_reconnect_delay = 30
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+        if ENABLE_EMBEDDING:
+            self.embedding_service = CaptionEmbeddings()
 
     def _get_topic_for_run(self, run_id: str) -> str:
         """Generate MQTT topic for a specific run."""
@@ -178,6 +181,16 @@ class MQTTSubscriber:
                     data = raw_data["metadata"]
                 else:
                     data = raw_data
+
+                if ENABLE_EMBEDDING:
+                    # Process embedding
+                    image_data = raw_data.get("blob", None)
+
+                    ids = await asyncio.to_thread(
+                        self.embedding_service.process_embeddings,
+                        img_blob=image_data,
+                        metadata=data
+                    )
 
                 # Extract run_id from topic
                 # Topic format: {prefix}/{run_id}
