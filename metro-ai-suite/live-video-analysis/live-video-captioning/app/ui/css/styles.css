@@ -238,7 +238,7 @@ main {
 }
 
 /* Inner grid container for video + caption with fixed proportions */
-#runsContainer .card > div:last-child,
+#runsContainer .card>div:last-child,
 .run-grid {
     display: grid;
     grid-template-rows: 60% 40%;
@@ -256,12 +256,12 @@ main {
 }
 
 /* Chips row must not shrink */
-.caption-panel > div:first-child {
+.caption-panel>div:first-child {
     flex-shrink: 0;
 }
 
 /* Watcher status must not shrink */
-.caption-panel > .status {
+.caption-panel>.status {
     flex-shrink: 0;
 }
 
@@ -418,6 +418,102 @@ iframe {
     50% {
         border-color: #66ffaa;
         box-shadow: 0 0 40px rgba(68, 255, 136, 0.6), var(--shadow);
+    }
+}
+
+/* Base popup box */
+.alert-popup {
+    position: fixed;
+    z-index: 2147483647;
+    max-width: 360px;
+    width: min(360px, calc(100vw - 16px));
+    padding: 14px 18px;
+    border-radius: 10px;
+
+    /* Theme-aligned colors (danger/red) */
+    background: #ffecec;
+    /* soft red-tinted background */
+    border: 1px solid #ff5a5a;
+    /* vibrant alert border */
+    color: #b00020;
+    /* deep red text */
+
+    /* Subtle glow to match card alert styling */
+    box-shadow: 0 4px 16px rgba(255, 80, 80, 0.3),
+        0 0 6px rgba(255, 100, 100, 0.4);
+
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+
+    opacity: 0;
+    transform: translateY(-8px);
+    animation: popup-in 200ms ease-out forwards;
+
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    font-size: 14px;
+}
+
+/* Alert icon */
+.alert-popup .icon {
+    font-size: 20px;
+    line-height: 1;
+    opacity: 0.85;
+    margin-top: 2px;
+}
+
+/* Message text */
+.alert-popup .message {
+    flex: 1;
+    line-height: 1.4;
+}
+
+/* Close button (top right) */
+.alert-popup .close-btn {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 0;
+    margin-left: 6px;
+    margin-top: 2px;
+}
+
+.alert-popup .close-btn:hover {
+    opacity: 1;
+}
+
+/* Variants */
+.alert-popup.safe {
+    background: #eafff2;
+    border-color: #22cc77;
+    color: #0a6133;
+    box-shadow: 0 4px 16px rgba(34, 204, 119, 0.28);
+}
+
+.alert-popup.warn {
+    background: #fff8e6;
+    border-color: #ffcd4d;
+    color: #8a5e00;
+    box-shadow: 0 4px 16px rgba(255, 205, 77, 0.28);
+}
+
+/* Entrance/exit animations */
+@keyframes popup-in {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes popup-out {
+    to {
+        opacity: 0;
+        transform: translateY(-8px);
     }
 }
 

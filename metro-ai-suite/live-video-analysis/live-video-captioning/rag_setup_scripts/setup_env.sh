@@ -132,17 +132,9 @@ elif [ "$BACKEND" == "OLLAMA" ]; then
     fi
 fi
 
-export USER_GROUP_ID=$(id -g ${USER})
-export HF_ACCESS_TOKEN="${HUGGINGFACEHUB_API_TOKEN}"
-export MODEL_CACHE_PATH="$MODEL_CACHE_PATH"
-export APP_BACKEND_URL="/v1/chatqna"
-export COMPOSE_PROFILES=$PROFILES
-export UI_HOST="chatqna-core-ui"
-export BACKEND_HOST=$BACKEND_HOST
-
-
 if [ "$VECTOR_STORE" == "vdms" ]; then
     echo "Connecting for VDMS vector."
+    PROFILES="EMBEDDING"
     export USE_VDMS=true
     export VDMS_HOST="${VDMS_HOST}"
     export VDMS_PORT="${VDMS_PORT}"
@@ -153,7 +145,14 @@ else
     echo "Local FAISS vectordb"
     export USE_VDMS=false
 fi
-    
+
+export USER_GROUP_ID=$(id -g ${USER})
+export HF_ACCESS_TOKEN="${HUGGINGFACEHUB_API_TOKEN}"
+export MODEL_CACHE_PATH="$MODEL_CACHE_PATH"
+export APP_BACKEND_URL="/v1/chatqna"
+export COMPOSE_PROFILES=$PROFILES
+export UI_HOST="chatqna-core-ui"
+export BACKEND_HOST=$BACKEND_HOST
 
 # Generate nginx.conf file for docker compose
 source ./nginx_config/generate_nginx_conf.sh
