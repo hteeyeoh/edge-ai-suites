@@ -104,59 +104,6 @@ User can enable embedding creation and RAG Chatbot by following the steps below.
    docker compose -f compose.yaml -f compose.rag.yaml down
    ```
 
-# Advanced Setup
-
-To deploy the chatbot separately on another host system. Please refer to the following steps:
-
-On the host, deploy the Live Captioning Sample by following:
-
-1. Follow [step 2 and step 3](#enabling-embedding-creation-and-rag-chatbot) to setup the Live Captioning Sample Application and environment.
-
-2. Run the following setup scripts.
-
-   ```bash
-   # Navigate to `edge-ai-suites/metro-ai-suite/live-video-analysis/live-video-captioning`.
-   source rag_setup_scripts/setup.sh
-   ```
-
-3. Start the application using Docker Compose tool.
-
-   ```bash
-   docker compose -f compose.yaml up
-   ```
-
-4. Make sure that all the application containers are up and in `healthy` state before access the application. Refer to [step 6](#enabling-embedding-creation-and-rag-chatbot)
-
-On another host, deploy the chatbot by following:
-
-1. Follow [step 1](#enabling-embedding-creation-and-rag-chatbot) to build the chatbot on your host.
-
-2. Export the following environment variables:
-
-   ```bash
-   export VDMS_HOST=<YOUR_HOST_IP>  # <- IP of the host where Live Video Captioning sample deployed
-   export VDMS_PORT=55555
-   export VDMS_EMBEDDING_MODEL=QwenText/qwen3-embedding-0.6b
-   export VDMS_EMBEDDING_HOST=<YOUR_HOST_IP>  # <- IP of the host where Live Video Captioning sample deployed
-   export VDMS_EMBEDDING_HOST_PORT=9777
-   ```
-   Note: If running in a proxy network, ensure that your live captioning host ip is added to the no_proxy environment variable to allow direct connections without going through the proxy.
-
-3. Run the following setup script.
-
-   ```bash
-   # Navigate to `edge-ai-libraries/sample-applications/chat-question-and-answer-core`.
-   source scripts/setup_env.sh -v vdms
-   ```
-
-4. Start the chatbot.
-
-   ```bash
-   docker compose -f docker/compose.yaml up
-   ```
-
-Now, access the application by referring to [step 7](#enabling-embedding-creation-and-rag-chatbot). Make sure that to replace the `<HOST_IP>` with the correct IP for each host.
-
 ## Troubleshooting
 
 Please refer to the [Get Started](./get-started.md) if anything wrong with the Live Captioning Sample. It is encourages to go through the get-started guide before trying this embedding and rag setup.

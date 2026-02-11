@@ -20,7 +20,7 @@
 
 # Default values
 MODEL_CACHE_PATH="/home/${USER}/model_cache/"
-DEVICE="CPU"
+DEVICE="NPU"
 PROFILES="OPENVINO"
 BACKEND="OPENVINO"
 BACKEND_HOST="chatqna-core-ov-cpu"
@@ -72,8 +72,8 @@ fi
 # Convert DEVICE to uppercase to handle both uppercase and lowercase inputs
 DEVICE=$(echo "$DEVICE" | tr '[:lower:]' '[:upper:]')
 # Check if DEVICE value is valid
-if [[ "$DEVICE" != "CPU" && "$DEVICE" != "GPU" ]]; then
-    echo "Error: Invalid device value '$DEVICE'. Valid values are 'cpu' or 'gpu'."
+if [[ "$DEVICE" != "CPU" && "$DEVICE" != "GPU" && "$DEVICE" != "NPU" ]]; then
+    echo "Error: Invalid device value '$DEVICE'. Valid values are 'cpu' or 'gpu' or 'npu'."
     return 1
 fi
 
@@ -122,6 +122,15 @@ if [ "$BACKEND" == "OPENVINO" ]; then
         else
             echo -e "No GPU rendering device found. \nUse CPU processing instead..."
         fi
+    elif [ "$DEVICE" == "NPU" ]; then
+        if compgen -G "/dev/accel/accel*" > /dev/null; then
+            echo "NPU device found. Getting the GID..."
+            export NPU_DEVICE_GID=$(stat -c "%g" /dev/accel/accel* | head -n 1)
+            PROFILES="OPENVINO-NPU"
+            BACKEND_HOST="chatqna-core-ov-npu"
+    else
+        echo -e "No NPU device. \nUse CPU processing instead..."
+    fi
     fi
 elif [ "$BACKEND" == "OLLAMA" ]; then
     PROFILES="OLLAMA"

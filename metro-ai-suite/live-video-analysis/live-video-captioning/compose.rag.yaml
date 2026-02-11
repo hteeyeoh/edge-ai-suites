@@ -37,15 +37,20 @@ x-chatqna-core-common: &chatqna-core-common
     - ${USER_GROUP_ID-1000}
 
 services:
-  nginx-default:
+  nginx-npu:
     <<: *nginx-common
     depends_on:
-      - chatqna-core-ov-cpu
+      - chatqna-core-ov-npu
       - chatqna-core-ui
 
-  chatqna-core-ov-cpu:
+  chatqna-core-ov-npu:
     <<: *chatqna-core-common
-    container_name: chatqna-core-ov-cpu
+    container_name: chatqna-core-ov-npu
+    devices:
+      - /dev/accel:/dev/accel
+    group_add:
+      - ${NPU_DEVICE_GID}
+      - ${USER_GROUP_ID-1000}
 
   chatqna-core-ui:
     image: ${REGISTRY:-}chatqna-ui:${UI_TAG:-latest}
