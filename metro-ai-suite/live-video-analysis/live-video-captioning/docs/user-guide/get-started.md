@@ -112,5 +112,6 @@ For alternative ways to setup the application, see:
 - [Docker Compose Documentation](https://docs.docker.com/compose/)
 - [Agent Mode](./agent-mode.md) - Enable alert-style responses for binary detection scenarios
 - [Enable Detection Pipeline](./object-detection-pipeline.md) - Enable object detection for live captioning.
+- [Embedding Vector Generation and RAG Chatbot](): Enable vector embedding creation from live captioning and RAG Chatbot.
 - [API Reference](./api-reference.md)
 - [Known Issues](./known-issues.md)
