@@ -1,9 +1,12 @@
 /**
- * Theme management utilities
+ * Theme Manager Module - Handles light/dark theme switching and persistence
  */
 const ThemeManager = (function () {
     const THEME_KEY = 'lvc-theme';
 
+    /*
+     * Detects initial theme: localStorage -> system preference -> light (default)
+     */
     function detectInitialTheme() {
         try {
             const saved = localStorage.getItem(THEME_KEY);
@@ -13,6 +16,9 @@ const ThemeManager = (function () {
         return 'light';
     }
 
+    /*
+     * Applies theme to document and updates toggle button accessibility
+     */
     function applyTheme(theme, themeToggle) {
         const next = theme === 'light' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', next);
@@ -24,23 +30,17 @@ const ThemeManager = (function () {
         } catch (_err) { }
     }
 
+    /*
+     * Toggles between light and dark themes
+     */
     function toggleTheme(themeToggle) {
         const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
         applyTheme(current === 'light' ? 'dark' : 'light', themeToggle);
     }
 
-    function getChartColors() {
-        const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-        return {
-            gridColor: isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.05)',
-            tickColor: isLight ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.55)',
-        };
-    }
-
     return {
         detectInitialTheme,
         applyTheme,
-        toggleTheme,
-        getChartColors
+        toggleTheme
     };
 })();
