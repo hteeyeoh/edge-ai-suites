@@ -23,3 +23,5 @@ export EMBEDDING_USE_OV=true
 # env for vdms-vector-db
 export VDMS_VDB_HOST_PORT=55555
 export VDMS_VDB_HOST=vdms-vector-db
+
+source scripts/setup.sh

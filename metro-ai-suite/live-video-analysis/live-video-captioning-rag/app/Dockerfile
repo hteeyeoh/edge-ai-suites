@@ -3,6 +3,17 @@
 
 FROM python:3.13-slim AS base
 
+ARG INSTALL_DRIVER_VERSION="25.48.36300"
+
+# Copy drivers and set execute permission on sh files
+COPY ./drivers/install_gpu_drivers.sh /tmp/drivers/install_gpu_drivers.sh
+RUN chmod +x /tmp/drivers/install_gpu_drivers.sh
+
+RUN echo "Installing GPU drivers version $INSTALL_DRIVER_VERSION" && \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates libxml2 && \
+    /tmp/drivers/install_gpu_drivers.sh && \
+    apt-get clean && rm -rf /tmp/drivers /var/lib/apt/lists/* /tmp/*
+
 # Build stage
 FROM base AS builder
 
