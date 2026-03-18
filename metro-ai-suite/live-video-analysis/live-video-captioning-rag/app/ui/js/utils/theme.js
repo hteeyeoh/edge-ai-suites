@@ -23,6 +23,11 @@ const ThemeManager = (function () {
         const next = theme === 'light' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', next);
         if (themeToggle) {
+            const sunIcon = themeToggle.querySelector('.icon-sun');
+            const moonIcon = themeToggle.querySelector('.icon-moon');
+
+            if (sunIcon) sunIcon.hidden = next !== 'light';
+            if (moonIcon) moonIcon.hidden = next !== 'dark';
             themeToggle.setAttribute('aria-label', next === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
         }
         try {

@@ -148,12 +148,12 @@ main {
   display: none;
 }
 
-/* Light theme → show MOON; Dark theme → show SUN */
-[data-theme="light"] .icon-moon {
+/* Light theme → show SUN; Dark theme → show MOON */
+[data-theme="light"] .icon-sun {
   display: block;
 }
 
-[data-theme="dark"] .icon-sun {
+[data-theme="dark"] .icon-moon {
   display: block;
 }
 
