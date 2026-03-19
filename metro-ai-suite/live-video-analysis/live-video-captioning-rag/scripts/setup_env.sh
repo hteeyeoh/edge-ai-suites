@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODEL_CACHE_PATH="/home/${USER}/model_cache/"
+MODEL_CACHE_PATH="${PWD}/llm_models"
 DEVICE="CPU"
 
 export USER_GROUP_ID=$(id -g ${USER})
@@ -17,7 +17,7 @@ export EMBEDDING_HOST_PORT=8000
 
 export EMBEDDING_OV_MODELS_DIR=/app/ov_models
 export EMBEDDING_SERVER_PORT=9777
-export EMBEDDING_DEVICE=CPU
+export EMBEDDING_DEVICE="$DEVICE"
 export EMBEDDING_USE_OV=true
 
 # env for vdms-vector-db

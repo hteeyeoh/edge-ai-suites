@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from ..services import (
-    get_retriever,
     process_query,
     build_chain,
 )
@@ -34,11 +33,9 @@ async def query_chat(request: ChatRequest):
             detail = "Input question is required and cannot be empty."
         )
 
-    retriever = get_retriever()
-
-    rag_chain = build_chain(retriever=retriever)
+    rag_chain = build_chain()
 
     return StreamingResponse(
-        process_query(rag_chain, request.input, retriever),
+        process_query(rag_chain, request.input),
         media_type = "text/event-stream"
     )

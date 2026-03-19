@@ -28,8 +28,16 @@ services:
       VDMS_PORT: ${VDMS_PORT:-55555}
     ports:
       - 4172:4172
+    devices:
+      - "/dev/dri:/dev/dri"
     group_add:
       - ${USER_GROUP_ID-1000}
+      # render group ID for ubuntu 20.04 host OS
+      - "109"
+      # render group ID for ubuntu 22.04 host OS
+      - "110"
+      # render group ID for ubuntu 24.04 host OS
+      - "992"
     volumes:
       - "${MODEL_CACHE_PATH}:/tmp/model_cache"
     healthcheck:

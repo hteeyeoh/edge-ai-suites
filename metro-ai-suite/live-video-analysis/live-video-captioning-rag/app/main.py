@@ -5,6 +5,7 @@ from backend.config import APP_PORT, UI_DIR
 from backend.routes import (
     chat_router,
     model_router,
+    embedding_router,
     health_router,
 )
 from fastapi import FastAPI
@@ -19,6 +20,7 @@ app = FastAPI(title="Live Video Captioning RAG")
 # Include all API routers
 app.include_router(chat_router)
 app.include_router(model_router)
+app.include_router(embedding_router)
 app.include_router(health_router)
 
 app.add_middleware(

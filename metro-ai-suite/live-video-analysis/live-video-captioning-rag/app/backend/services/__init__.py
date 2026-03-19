@@ -1,11 +1,11 @@
 from .chain import (
-    get_retriever,
     build_chain,
-    process_query
+    process_query,
+    process_embeddings,
 )
 
 __all__ = [
-    "get_retriever",
     "build_chain",
-    "process_query"
+    "process_query",
+    "process_embeddings",
 ]
