@@ -1035,3 +1035,49 @@ iframe {
 .info-svg {
     color: #1e90ff;
 }
+
+.device-security-panel {
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--panel-strong);
+}
+
+.device-security-title {
+    margin: 0 0 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.device-security-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.device-security-label,
+.device-security-value {
+    padding: 5px 8px;
+    font-size: 12px;
+}
+
+.device-security-label {
+    color: var(--muted);
+}
+
+.device-security-value {
+    font-weight: 600;
+}
+
+.security-icon.warn,
+.security-warn {
+    color: #3b82f6;
+}
+
+.security-ok {
+    color: #10b981;
+}
+
+.security-fail {
+    color: #ef4444;
+}
