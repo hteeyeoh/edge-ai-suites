@@ -58,6 +58,12 @@ User can enable embedding creation and RAG Chatbot by following the steps below.
    export COMPOSE_PROFILES=EMBEDDING
    export VDMS_VDB_HOST_PORT=55555
    export VDMS_VDB_HOST=vdms-vector-db
+
+   # [OPTIONAL] To run in OFFLINE mode.
+   # Please be aware that not to run offline mode if first run. Model files need to be downloaded and store in system before they can run in offline mode.
+   # Export the following:
+   export OFFLINE_MODE=True
+    
    ```
 
 4. Run the following setup scripts.

@@ -26,6 +26,7 @@ x-chatqna-core-common: &chatqna-core-common
     VDMS_EMBEDDING_MODEL: ${VDMS_EMBEDDING_MODEL:-}
     VDMS_EMBEDDING_HOST: ${VDMS_EMBEDDING_HOST:-multimodal-embedding-serving}
     VDMS_EMBEDDING_HOST_PORT: ${VDMS_EMBEDDING_HOST_PORT:-8000}
+    HF_HUB_OFFLINE: ${OFFLINE_MODE:-False}
   ports:
     - "8888:8888"
   volumes:

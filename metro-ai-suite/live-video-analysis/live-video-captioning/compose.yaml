@@ -263,6 +263,7 @@ services:
       DEFAULT_CLIP_DURATION: ${DEFAULT_CLIP_DURATION:--1}
       DEFAULT_NUM_FRAMES: ${DEFAULT_NUM_FRAMES:-64}
       OV_PERFORMANCE_MODE: ${OV_PERFORMANCE_MODE:-LATENCY}
+      HF_HUB_OFFLINE: ${OFFLINE_MODE:-False}
     devices:
       - /dev/dri:/dev/dri
     group_add:
