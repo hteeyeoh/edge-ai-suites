@@ -19,6 +19,29 @@ The overall infrastructure involves ingesting an RTSP stream, processing it thro
 
 For more information see [How it works](./docs/user-guide/how-it-works.md)
 
+## Deployment Modes
+
+You can run the stack in two modes:
+
+- Full mode (video + captions): starts WebRTC video services and streams video in the UI.
+- Caption-only mode (captions only): skips WebRTC video services and keeps only caption/AI result flow.
+
+### Full mode (default behavior for video streaming)
+
+```bash
+export ENABLE_VIDEO_STREAMING=true
+docker compose --profile video-streaming up -d
+```
+
+### Caption-only mode (save resources)
+
+```bash
+export ENABLE_VIDEO_STREAMING=false
+docker compose up -d
+```
+
+In caption-only mode, the pipeline start payload omits WebRTC destination output, the UI hides video cards, and captions/alerts continue over MQTT -> SSE.
+
 ## Learn More
 
 - [Overview](./docs/user-guide/index.md)

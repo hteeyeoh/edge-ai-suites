@@ -444,9 +444,16 @@
     }
 
     function attachRunStreams(run, ui) {
+        const videoStreamingEnabled = cfg.enableVideoStreaming !== false;
         const base = resolveSignalingBase(cfg.signalingUrl);
-        if (base) {
+        if (videoStreamingEnabled && base) {
             ui.video.src = `${base}/${run.peerId}`;
+        } else if (!videoStreamingEnabled && ui.video) {
+            const runGrid = ui.video.parentElement;
+            ui.video.remove();
+            if (runGrid) {
+                runGrid.style.gridTemplateColumns = '1fr';
+            }
         }
 
         // Store UI reference for the multiplexed metadata stream

@@ -35,7 +35,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - mediamtx
       - mqtt-broker
     ports:
       - "${EVAM_HOST_PORT:-8040}:${EVAM_PORT:-8080}"
@@ -49,7 +48,7 @@ services:
       - HTTPS_PROXY=$https_proxy
       - RUN_MODE=EVA
       - ENABLE_RTSP=false
-      - ENABLE_WEBRTC=true
+      - ENABLE_WEBRTC=${ENABLE_VIDEO_STREAMING:-true}
       - REST_SERVER_PORT=8554
       # Default Detection and Classification Device
       - DETECTION_DEVICE=CPU
@@ -99,6 +98,8 @@ services:
   mediamtx:
     image: bluenviron/mediamtx:1.11.3
     container_name: mediamtx
+    profiles:
+      - video-streaming
     environment:
       - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${no_proxy}
       - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${NO_PROXY}
@@ -127,6 +128,8 @@ services:
   coturn:
     image: coturn/coturn:latest
     container_name: coturn
+    profiles:
+      - video-streaming
     environment:
       - no_proxy=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${no_proxy}
       - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,dlstreamer-pipeline-server,video-caption-service,collector,${NO_PROXY}
@@ -160,6 +163,7 @@ services:
       - MQTT_TOPIC_PREFIX=live-video-captioning
       - WEBRTC_PEER_ID=${WEBRTC_PEER_ID:-stream}
       - SIGNALING_URL=http://${HOST_IP:-localhost}:${WHIP_SERVER_PORT:-8889}
+      - ENABLE_VIDEO_STREAMING=${ENABLE_VIDEO_STREAMING:-true}
       - ALERT_MODE=${ALERT_MODE:-false}
       - DEFAULT_RTSP_URL=${DEFAULT_RTSP_URL:-}
       - ENABLE_DETECTION_PIPELINE=${ENABLE_DETECTION_PIPELINE:-false}
@@ -181,8 +185,6 @@ services:
       start_period: 40s
     depends_on:
       dlstreamer-pipeline-server:
-        condition: service_started
-      mediamtx:
         condition: service_started
       mqtt-broker:
         condition: service_started

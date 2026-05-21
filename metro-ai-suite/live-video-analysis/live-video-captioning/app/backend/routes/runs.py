@@ -14,6 +14,7 @@ from ..config import (
     PIPELINE_SERVER_URL,
     MQTT_TOPIC_PREFIX,
     WEBRTC_BITRATE,
+    ENABLE_VIDEO_STREAMING,
     ENABLE_EMBEDDING,
 )
 from ..models import RunInfo, StartRunRequest
@@ -95,13 +96,21 @@ def _build_pipeline_parameters(req: StartRunRequest, run_id: str) -> dict:
 
 
 def _build_start_payload(req: StartRunRequest, run_id: str, peer_id: str) -> dict:
-    return {
+    payload = {
         "source": {"uri": req.rtspUrl, "type": "uri"},
-        "destination": {
-            "frame": {"type": "webrtc", "peer-id": peer_id, "bitrate": WEBRTC_BITRATE},
-        },
         "parameters": _build_pipeline_parameters(req, run_id),
     }
+
+    if ENABLE_VIDEO_STREAMING:
+        payload["destination"] = {
+            "frame": {
+                "type": "webrtc",
+                "peer-id": peer_id,
+                "bitrate": WEBRTC_BITRATE,
+            },
+        }
+
+    return payload
 
 
 def _extract_pipeline_id(raw: str) -> str:
