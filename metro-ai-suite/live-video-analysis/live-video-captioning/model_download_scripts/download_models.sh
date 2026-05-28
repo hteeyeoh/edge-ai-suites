@@ -39,7 +39,7 @@ DEVICE="CPU"
 PRECISION="int8"
 MODEL=""
 
-EPHEMERAL_SCRIPT_URL="${MODEL_DOWNLOAD_EPHEMERAL_SCRIPT_URL:-https://raw.githubusercontent.com/yogeshmpandey/edge-ai-libraries/feat/ephemeral-container/microservices/model-download/scripts/get_model.sh}"
+EPHEMERAL_SCRIPT_URL="${MODEL_DOWNLOAD_EPHEMERAL_SCRIPT_URL:-https://raw.githubusercontent.com/open-edge-platform/edge-ai-libraries/main/microservices/model-download/scripts/get_model.sh}"
 IMAGE_TAG="${TAG:-latest}"
 OVMS_RELEASE_TAG="${OVMS_RELEASE_TAG:-v2026.0}"
 
@@ -213,9 +213,14 @@ if [[ "${MODEL_TYPE}" == "vlm" || "${MODEL_TYPE}" == "llm" ]]; then
     MODEL_SRC=$(find "${NESTED_DIR}" -mindepth 1 -maxdepth 2 -type d -name "${MODEL_BASENAME}" 2>/dev/null | head -1)
   fi
 
-  if [[ -n "${MODEL_SRC}" && -d "${MODEL_SRC}" ]]; then
-    # Preserve the full model path (org/model) in final output when present.
+  if [[ "${MODEL_TYPE}" == "vlm" ]]; then
+    TARGET_DIR="${FINAL_DIR}/${MODEL_BASENAME}"
+  elif [[ "${MODEL_TYPE}" == "llm" ]]; then
+    # For LLMs, preserve the org/model structure if present
     TARGET_DIR="${FINAL_DIR}/${MODEL}"
+  fi
+
+  if [[ -n "${MODEL_SRC}" && -d "${MODEL_SRC}" ]]; then
     mkdir -p "${TARGET_DIR}"
     mv "${MODEL_SRC}"/* "${TARGET_DIR}"/
     log "Relocated model to: ${TARGET_DIR}"
