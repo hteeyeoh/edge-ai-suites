@@ -1,6 +1,6 @@
 # Get Started
 
-Live Video Captioning processes RTSP streams or USB camera feeds through a DL Streamer pipeline and uses a Vision-Language Model (VLM) to generate real-time captions. It also reports throughput and latency metrics.
+Live Video Captioning processes RTSP streams or USB camera (including webcam) feeds through a DLStreamer pipeline and uses a Vision-Language Model (VLM) to generate real-time captions. It also reports throughput and latency metrics.
 
 This section shows how to:
 
@@ -11,9 +11,9 @@ This section shows how to:
 ## Prerequisites
 
 - Verify that your system meets the minimum requirements. See [System Requirements](./get-started/system-requirements.md) for details.
-- Install Docker platform: [Installation Guide](https://docs.docker.com/get-docker/).
-- Install Docker Compose tool: [Installation Guide](https://docs.docker.com/compose/install/).
-- RTSP stream source (live camera or test feed) or simulated RTSP stream source using local video files.
+- Install Docker platform: [Installation Guide](https://docs.docker.com/engine/install/). Install the Ubuntu platform version. 
+- Install Docker Compose tool: [Installation Guide](https://docs.docker.com/compose/install/). *Note: Docker provides a simple installation script to install Docker engine and other dependencies on Linux. Refer to the [official docker script](https://get.docker.com/) for more details in case this approach is preferred. This script is not validated as part of this sample application installation and the user should factor in the risks accordingly.*
+- In case the sample application is used with RTSP streams, setup of the RTSP stream source (live camera or test feed) or simulated RTSP stream source using local video files should be done separately.
 
 ## Run the Application
 
