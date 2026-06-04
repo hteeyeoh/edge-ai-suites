@@ -238,6 +238,21 @@ class TestStartRun:
         assert "already in use" in resp.json()["detail"]["message"]
         mock_http.assert_not_called()
 
+    def test_start_run_rejects_invalid_pipeline_name(self, client):
+        """Unsafe pipelineName characters are rejected before upstream request."""
+        with patch("backend.routes.runs.http_json") as mock_http:
+            resp = client.post(
+                "/api/generate_captions_alerts",
+                json={
+                    "rtspUrl": "rtsp://10.0.0.1/stream",
+                    "pipelineName": "../../etc/passwd",
+                },
+            )
+
+        assert resp.status_code == 400
+        assert "Invalid pipelineName" in resp.json()["detail"]["message"]
+        mock_http.assert_not_called()
+
 
 # ===================================================================
 # GET /api/generate_captions_alerts, list all runs

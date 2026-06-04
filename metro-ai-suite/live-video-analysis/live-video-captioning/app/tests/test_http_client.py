@@ -12,6 +12,13 @@ from fastapi import HTTPException
 from backend.services.http_client import http_json, try_get_json
 
 
+@pytest.fixture(autouse=True)
+def _allow_example_origin():
+    """Allow example.com as the trusted pipeline-server origin during tests."""
+    with patch("backend.services.http_client.PIPELINE_SERVER_URL", "http://example.com"):
+        yield
+
+
 class TestHttpJsonSuccess:
     """Happy-path tests for http_json."""
 
@@ -77,7 +84,7 @@ class TestHttpJsonErrors:
             side_effect=URLError("Connection refused"),
         ):
             with pytest.raises(HTTPException) as exc_info:
-                http_json("GET", "http://unreachable:8080/api")
+                http_json("GET", "http://example.com/api")
         assert exc_info.value.status_code == 502
         assert "unreachable" in str(exc_info.value.detail)
 
@@ -108,6 +115,16 @@ class TestHttpJsonErrors:
 
         assert exc_info.value.status_code == 502
         assert "connection failed" in str(exc_info.value.detail)
+
+    def test_untrusted_url_is_blocked_before_request(self):
+        """Requests to non-pipeline-server URLs are rejected as bad requests."""
+        with patch("backend.services.http_client.urllib_request.urlopen") as mock_open:
+            with pytest.raises(HTTPException) as exc_info:
+                http_json("GET", "http://evil.example.com/api")
+
+        assert exc_info.value.status_code == 400
+        assert "untrusted URL" in str(exc_info.value.detail)
+        mock_open.assert_not_called()
 
 
 class TestTryGetJson:
@@ -200,3 +217,12 @@ class TestTryGetJson:
             status, body = try_get_json("http://example.com/status")
         assert status is None
         assert body is None
+
+    def test_untrusted_url_returns_none_without_request(self):
+        """Untrusted URLs are short-circuited to (None, None)."""
+        with patch("backend.services.http_client.urllib_request.urlopen") as mock_open:
+            status, body = try_get_json("http://evil.example.com/status")
+
+        assert status is None
+        assert body is None
+        mock_open.assert_not_called()

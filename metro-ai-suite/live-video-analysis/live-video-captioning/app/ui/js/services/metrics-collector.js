@@ -2,7 +2,7 @@
  * Metrics collector service for WebSocket-based system metrics
  * Connects to the external live-metrics-service for real-time metrics streaming
  */
-const MetricsCollectorService = (function() {
+const MetricsCollectorService = (function () {
     let metricsWS = null;
     let reconnectTimeout = null;
     let reconnectAttempts = 0;
@@ -10,7 +10,7 @@ const MetricsCollectorService = (function() {
     const reconnectDelay = 3000;
 
     // Data structures for tracking GPU engine metrics
-    const gpuEngineData = {};
+    const gpuEngineData = Object.create(null);
     // Track GPU power values separately for combining
     let gpuPowerValue = null;
     let pkgPowerValue = null;
@@ -35,6 +35,19 @@ const MetricsCollectorService = (function() {
         // Format engine names for display (e.g., "rcs0" -> "RCS0", "video" -> "Video")
         if (!name) return 'Unknown';
         return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    function isSafeEngineKey(name) {
+        if (typeof name !== 'string' || name.length === 0 || name.length > 64) {
+            return false;
+        }
+
+        // Block prototype-pollution primitives and allow only expected key characters.
+        if (name === '__proto__' || name === 'prototype' || name === 'constructor') {
+            return false;
+        }
+
+        return /^[A-Za-z0-9_-]+$/.test(name);
     }
 
     function processCollectorMetrics(metrics, elements) {
@@ -72,7 +85,12 @@ const MetricsCollectorService = (function() {
 
                 case 'gpu_engine_usage':
                     if (fields.usage !== undefined && tags.engine) {
-                        const engineName = tags.engine.toUpperCase();
+                        const rawEngineName = String(tags.engine).trim();
+                        if (!isSafeEngineKey(rawEngineName)) {
+                            break;
+                        }
+
+                        const engineName = rawEngineName.toUpperCase();
                         const usage = fields.usage;
 
                         // Store engine data

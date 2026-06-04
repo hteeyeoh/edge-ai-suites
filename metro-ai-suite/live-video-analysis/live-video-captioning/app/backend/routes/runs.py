@@ -7,6 +7,7 @@ import logging
 import re
 import uuid
 from typing import AsyncGenerator, Optional
+from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from ..config import (
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/api", tags=["captions"])
 logger = logging.getLogger("app.runs")
 WEBRTC_PEER_ID_MAX_LENGTH = 8
 WEBRTC_PEER_ID_PREFIX = "s"
+PIPELINE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def _is_linux_video_device(source_uri: str) -> bool:
@@ -41,6 +43,26 @@ def _sanitize_run_name(run_name: str) -> str:
     """Normalize a user-supplied run name into a safe run identifier."""
     sanitized = re.sub(r"\s+", "_", run_name.strip())
     return re.sub(r"[^a-zA-Z0-9_-]", "", sanitized)
+
+
+def _validate_requested_pipeline_name(pipeline_name: str) -> str:
+    """Accept only safe pipeline identifier characters for user-provided values."""
+    candidate = (pipeline_name or "").strip()
+    if not candidate:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "pipelineName must not be empty"},
+        )
+
+    if not PIPELINE_NAME_PATTERN.fullmatch(candidate):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Invalid pipelineName. Use only letters, numbers, dot, underscore, and hyphen.",
+            },
+        )
+
+    return candidate
 
 
 def _build_unique_run_name(requested_name: Optional[str]) -> Optional[str]:
@@ -142,7 +164,11 @@ async def start_run(req: StartRunRequest) -> RunInfo:
     requested_pipeline = (req.pipelineName or "").strip()
     using_camera_source = _is_linux_video_device(requested_source)
 
-    pipeline_name = requested_pipeline or PIPELINE_NAME
+    pipeline_name = (
+        _validate_requested_pipeline_name(requested_pipeline)
+        if requested_pipeline
+        else PIPELINE_NAME
+    )
     if using_camera_source and not _is_camera_pipeline_name(pipeline_name):
         if requested_pipeline:
             detail_message = (
@@ -181,11 +207,10 @@ async def start_run(req: StartRunRequest) -> RunInfo:
     # MQTT topic for this run's metadata
     mqtt_topic = f"{MQTT_TOPIC_PREFIX}"
 
-    start_url = f"{PIPELINE_SERVER_URL.rstrip('/')}/pipelines/user_defined_pipelines/{pipeline_name}"
+    start_url = f"{PIPELINE_SERVER_URL.rstrip('/')}/pipelines/user_defined_pipelines/{quote(pipeline_name, safe='')}"
     payload = _build_start_payload(req, run_id, peer_id)
 
-    logger.debug(f"Starting pipeline {pipeline_name} with URL: {start_url}")
-    logger.debug(f"Pipeline payload: {json.dumps(payload, indent=2)}")
+    logger.debug("Starting caption pipeline request")
 
     raw = http_json("POST", start_url, payload=payload)
     pipeline_id = _extract_pipeline_id(raw)
