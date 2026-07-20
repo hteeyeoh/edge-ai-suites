@@ -13,6 +13,191 @@ let availableTools = [];
 let eventSource = null;
 let pollingInterval = null;
 let sseConnected = false;
+const streamLoadCancels = new Map();
+
+function resolveWebRtcBase() {
+    const cfg = window.RUNTIME_CONFIG || {};
+    const configured = (cfg.webrtcSignalingUrl || '').trim();
+    if (configured) {
+        return configured.replace(/\/+$/, '');
+    }
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+    const host = window.location.hostname;
+    const port = String(cfg.webrtcSignalingPort || 8889);
+    return `${protocol}//${host}:${port}`;
+}
+
+function buildWebRtcUrl(streamId) {
+    const base = resolveWebRtcBase();
+    return `${base}/${encodeURIComponent(streamId)}`;
+}
+
+function waitForIceGatheringComplete(pc, timeoutMs = 2500) {
+    if (pc.iceGatheringState === 'complete') {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            pc.removeEventListener('icegatheringstatechange', onChange);
+            resolve();
+        };
+        const onChange = () => {
+            if (pc.iceGatheringState === 'complete') {
+                finish();
+            }
+        };
+        pc.addEventListener('icegatheringstatechange', onChange);
+        setTimeout(finish, timeoutMs);
+    });
+}
+
+async function mediamtxHasPublisher(streamId) {
+    const base = resolveWebRtcBase();
+    try {
+        const resp = await fetch(`${base}/${encodeURIComponent(streamId)}/whep`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/sdp' },
+        });
+        // mediamtx commonly returns 404 when path has no publisher yet and 400 once it exists.
+        return resp.status !== 404;
+    } catch (_err) {
+        return false;
+    }
+}
+
+async function isBackendStreamReady(streamId) {
+    try {
+        const res = await fetch('/streams');
+        if (!res.ok) {
+            return true;
+        }
+        const data = await res.json();
+        const streams = Array.isArray(data?.streams) ? data.streams : [];
+        const stream = streams.find(s => (typeof s === 'object' ? s.stream_id : s) === streamId);
+        if (!stream || typeof stream !== 'object') {
+            return true;
+        }
+
+        const connected = Boolean(stream.connected);
+        const fps = Number(stream.fps || 0);
+        return connected && fps > 0;
+    } catch (_err) {
+        // Do not block playback forever if readiness probe fails.
+        return true;
+    }
+}
+
+async function startDirectWhepPlayback(streamId, videoEl) {
+    const pc = new RTCPeerConnection();
+    let sessionUrl = '';
+
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    pc.ontrack = (event) => {
+        const stream = event.streams && event.streams[0];
+        if (!stream) return;
+        videoEl.srcObject = stream;
+        videoEl.play().catch(() => {
+            // Autoplay can be blocked in some browser policies.
+        });
+    };
+
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitForIceGatheringComplete(pc);
+
+    const resp = await fetch(`${buildWebRtcUrl(streamId)}/whep`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: pc.localDescription?.sdp || '',
+    });
+
+    if (!resp.ok) {
+        pc.close();
+        throw new Error(`WHEP handshake failed: HTTP ${resp.status}`);
+    }
+
+    const location = resp.headers.get('Location') || resp.headers.get('location');
+    if (location) {
+        sessionUrl = new URL(location, `${buildWebRtcUrl(streamId)}/whep`).toString();
+    }
+
+    const answerSdp = await resp.text();
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    const cleanup = () => {
+        try {
+            pc.close();
+        } catch (_err) {
+            // ignore
+        }
+        if (sessionUrl) {
+            fetch(sessionUrl, { method: 'DELETE' }).catch(() => {
+                // best-effort cleanup
+            });
+        }
+    };
+
+    return { pc, cleanup };
+}
+
+function startVideoLoadSequence(streamId, videoEl, overlay) {
+    const START_TIMEOUT_MS = 45000;
+    const FAST_POLL_MS = 1000;
+    const SLOW_POLL_MS = 3000;
+    const startedAt = Date.now();
+    let cancelled = false;
+    let playback = null;
+    let connecting = false;
+
+    const hideOverlayOnFirstFrame = () => {
+        if (!cancelled && overlay) overlay.style.display = 'none';
+    };
+    videoEl.addEventListener('loadeddata', hideOverlayOnFirstFrame, { once: true });
+
+    const poll = async () => {
+        if (cancelled || connecting) return;
+
+        const backendReady = await isBackendStreamReady(streamId);
+        if (cancelled) return;
+
+        const available = await mediamtxHasPublisher(streamId);
+        if (cancelled) return;
+
+        if (backendReady && available) {
+            connecting = true;
+            try {
+                playback = await startDirectWhepPlayback(streamId, videoEl);
+                if (cancelled) {
+                    playback.cleanup();
+                }
+                return;
+            } catch (_err) {
+                connecting = false;
+                // Retry handshake while readiness conditions remain true.
+                setTimeout(poll, FAST_POLL_MS);
+                return;
+            }
+        }
+
+        if (Date.now() - startedAt < START_TIMEOUT_MS) {
+            setTimeout(poll, FAST_POLL_MS);
+            return;
+        }
+
+        setTimeout(poll, SLOW_POLL_MS);
+    };
+
+    poll();
+    return () => {
+        cancelled = true;
+        videoEl.removeEventListener('loadeddata', hideOverlayOnFirstFrame);
+        if (playback) {
+            playback.cleanup();
+        }
+    };
+}
 
 function cssSafeId(str) {
     return str.replace(/[^a-zA-Z0-9-_]/g, '_');
@@ -21,19 +206,19 @@ function cssSafeId(str) {
 function showToast(message, type = 'info') {
     const existing = document.getElementById('toast-notification');
     if (existing) existing.remove();
-    
+
     const colors = {
         success: 'bg-green-500',
         error: 'bg-red-500',
         info: 'bg-blue-500'
     };
-    
+
     const toast = document.createElement('div');
     toast.id = 'toast-notification';
     toast.className = `fixed bottom-4 right-4 ${colors[type] || colors.info} text-white px-4 py-2 rounded-lg shadow-lg z-50 text-sm font-medium`;
     toast.textContent = message;
     document.body.appendChild(toast);
-    
+
     setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transition = 'opacity 0.3s';
@@ -65,10 +250,10 @@ function initSSE() {
     if (eventSource) {
         eventSource.close();
     }
-    
+
     console.log('[SSE] Connecting to /events...');
     eventSource = new EventSource('/events');
-    
+
     eventSource.onopen = () => {
         console.log('[SSE] Connected successfully');
         sseConnected = true;
@@ -78,18 +263,18 @@ function initSSE() {
             console.log('[SSE] Stopped polling - using SSE');
         }
     };
-    
+
     eventSource.addEventListener('init', (e) => {
         try {
             const data = JSON.parse(e.data);
             console.log('[SSE] Received init:', data.streams?.length, 'streams');
-            
+
             if (data.streams && JSON.stringify(data.streams.sort()) !== JSON.stringify(activeStreams.sort())) {
                 activeStreams = data.streams;
                 renderGrid();
                 renderStreamList();
             }
-            
+
             if (data.results) {
                 updateAllResults(data.results);
             }
@@ -97,18 +282,18 @@ function initSSE() {
             console.error('[SSE] Init parse error:', err);
         }
     });
-    
+
     eventSource.addEventListener('analysis', (e) => {
         try {
             const data = JSON.parse(e.data);
             const { stream_id, results } = data;
-            
+
             updateStreamResult(stream_id, results);
         } catch (err) {
             console.error('[SSE] Analysis parse error:', err);
         }
     });
-    
+
     eventSource.addEventListener('keepalive', () => {
         console.log('[SSE] Keepalive received');
     });
@@ -136,11 +321,11 @@ function initSSE() {
             console.error('[SSE] alert_action parse error:', err);
         }
     });
-    
+
     eventSource.onerror = (e) => {
         console.error('[SSE] Connection error');
         sseConnected = false;
-        
+
         if (eventSource.readyState === EventSource.CLOSED) {
             console.log('[SSE] Connection closed, falling back to polling');
             eventSource.close();
@@ -158,11 +343,11 @@ function startPollingFallback() {
 
 function updateStreamResult(streamId, results) {
     resultsCache[streamId] = results;
-    
+
     const safeId = cssSafeId(streamId);
     const resultDiv = document.getElementById(`result-${safeId}`);
     if (!resultDiv) return;
-    
+
     const selectedAlert = cardStates[streamId];
     renderResultDiv(resultDiv, selectedAlert, results);
 }
@@ -172,7 +357,7 @@ function refreshAllResults() {
         const safeId = cssSafeId(id);
         const resultDiv = document.getElementById(`result-${safeId}`);
         if (!resultDiv) return;
-        
+
         const selectedAlert = cardStates[id];
         const cachedData = resultsCache[id];
         renderResultDiv(resultDiv, selectedAlert, cachedData);
@@ -193,9 +378,9 @@ function renderResultDiv(resultDiv, selectedAlert, streamData) {
         resultDiv.innerHTML = '<p class="text-xs text-gray-400 italic">Waiting for analysis...</p>';
         return;
     }
-    
+
     const enabledAlertNames = alertConfig.filter(a => a.enabled).map(a => a.name);
-    
+
     const MAX_VISIBLE_ALERTS = 4;
 
     if (selectedAlert === '__ALL__') {
@@ -227,7 +412,7 @@ function renderResultCard(result, alertName) {
     const textClass = isYes ? 'text-red-800' : 'text-green-800';
     const badgeClass = isYes ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
     const icon = isYes ? '⚠️' : '✓';
-    
+
     return `
         <div class="rounded border p-2 ${bgClass} transition-colors duration-300">
             <div class="flex justify-between items-center mb-1">
@@ -272,7 +457,7 @@ async function loadAlertConfig() {
         const res = await fetch('/config/alerts');
         alertConfig = await res.json();
         renderAlertConfig();
-    } catch(e) { 
+    } catch (e) {
         console.error("Failed to load alert config:", e);
         alertConfig = [];
         renderAlertConfig();
@@ -283,16 +468,16 @@ function renderAlertConfig() {
     const container = document.getElementById('alerts-container');
     const addBtn = document.getElementById('add-alert-btn');
     container.innerHTML = '';
-    
+
     alertConfig.forEach((alertEntry, index) => {
         const card = document.createElement('div');
         card.className = "bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-all group relative";
         card.innerHTML = `
             <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2">
-                     <input type="checkbox" 
-                       class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-offset-0 focus:ring-1 focus:ring-blue-500 cursor-pointer" 
-                       ${alertEntry.enabled ? 'checked' : ''} 
+                     <input type="checkbox"
+                       class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-offset-0 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                       ${alertEntry.enabled ? 'checked' : ''}
                        onchange="toggleAlert(${index}, this.checked)">
                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Alert ${index + 1}</span>
                 </div>
@@ -303,22 +488,22 @@ function renderAlertConfig() {
                 </button>
             </div>
             <div class="space-y-2">
-                <input type="text" 
-                       value="${escapeHtml(alertEntry.name)}" 
+                <input type="text"
+                       value="${escapeHtml(alertEntry.name)}"
                        class="w-full text-xs font-semibold text-slate-700 bg-slate-100 border-0 rounded px-2.5 py-1.5 focus:bg-white focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 transition-all outline-none"
                        placeholder="Alert Name"
                        onchange="updateAlertName(${index}, this.value)">
-                <textarea class="w-full text-[11px] text-slate-600 bg-slate-100 border-0 rounded px-2.5 py-1.5 resize-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 transition-all outline-none leading-relaxed" 
-                          rows="2" 
+                <textarea class="w-full text-[11px] text-slate-600 bg-slate-100 border-0 rounded px-2.5 py-1.5 resize-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 transition-all outline-none leading-relaxed"
+                          rows="2"
                           placeholder="Describe visual condition (e.g., Is there fire?)"
                           onchange="updateAlertPrompt(${index}, this.value)">${escapeHtml(alertEntry.prompt)}</textarea>
             </div>
         `;
         container.appendChild(card);
     });
-    
+
     addBtn.style.display = alertConfig.length >= 4 ? 'none' : 'flex';
-    
+
     updateAllDropdowns();
     refreshAllResults();
 }
@@ -366,13 +551,13 @@ async function saveAlerts() {
         showToast("Please fill in all alert names and prompts", "error");
         return;
     }
-    
+
     const names = alertConfig.map(a => a.name.trim().toLowerCase());
     if (new Set(names).size !== names.length) {
         showToast("Alert names must be unique", "error");
         return;
     }
-    
+
     try {
         const res = await fetch('/config/alerts', {
             method: 'POST',
@@ -384,7 +569,7 @@ async function saveAlerts() {
         } else {
             showToast("Failed to save alerts", "error");
         }
-    } catch(e) {
+    } catch (e) {
         console.error(e);
         showToast("Failed to save alerts", "error");
     }
@@ -396,7 +581,7 @@ function updateAllDropdowns() {
     optionsHtml += enabledAlerts.length > 0
         ? enabledAlerts.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join('')
         : '';
-    
+
     activeStreams.forEach(id => {
         const safeId = cssSafeId(id);
         const select = document.querySelector(`#card-${safeId} select`);
@@ -476,7 +661,7 @@ async function loadStreams() {
         });
         renderGrid();
         renderStreamList();
-    } catch(e) { console.error("Error loading streams", e); }
+    } catch (e) { console.error("Error loading streams", e); }
 }
 
 function renderStreamList() {
@@ -525,10 +710,10 @@ async function deleteStream(id) {
         renderGrid();
         renderStreamList();
     }
-    
+
     try {
         const res = await fetch(`/streams/${id}`, { method: 'DELETE' });
-        if(res.ok) {
+        if (res.ok) {
             const result = await res.json();
             showToast(`Deleted stream '${result.name}'`, "success");
         } else {
@@ -536,10 +721,10 @@ async function deleteStream(id) {
             await loadStreams();
             showToast("Failed to delete stream", "error");
         }
-    } catch(e) { 
+    } catch (e) {
         console.error(e);
         await loadStreams();
-        showToast("Error deleting stream", "error"); 
+        showToast("Error deleting stream", "error");
     }
 }
 
@@ -547,7 +732,7 @@ async function addNewStream() {
 
     const name = (document.getElementById('inp-stream-name') || document.getElementById('inp-stream-id'))?.value.trim() || '';
     const url = document.getElementById('inp-stream-url').value.trim();
-    if(!url) {
+    if (!url) {
         showToast("Please enter a stream URL", "error");
         return;
     }
@@ -557,10 +742,10 @@ async function addNewStream() {
     try {
         const res = await fetch('/streams', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name, url, tools})
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, url, tools })
         });
-        if(res.ok) {
+        if (res.ok) {
             const result = await res.json();
             const nameInput = document.getElementById('inp-stream-name') || document.getElementById('inp-stream-id');
             if (nameInput) nameInput.value = '';
@@ -570,9 +755,9 @@ async function addNewStream() {
         } else {
             showToast("Failed to add stream", "error");
         }
-    } catch(e) { 
+    } catch (e) {
         console.error(e);
-        showToast("Error adding stream", "error"); 
+        showToast("Error adding stream", "error");
     }
 }
 
@@ -587,88 +772,139 @@ function updateCardAlert(streamId, alertName) {
 }
 
 // ============== VIDEO GRID RENDERING ==============
+function createStreamCard(id, enabledAlerts) {
+    const safeId = cssSafeId(id);
+    const meta = streamMetadata[id];
+    const displayName = (meta && meta.name) ? meta.name : id;
+
+    const card = document.createElement('div');
+    card.id = `card-${safeId}`;
+    card.dataset.streamId = id;
+    card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col h-full";
+
+    const header = document.createElement('div');
+    header.className = "px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between items-center";
+    header.innerHTML = `<span class="font-bold text-gray-700 text-sm overflow-hidden text-ellipsis whitespace-nowrap mr-2" title="${escapeHtml(id)}">${escapeHtml(displayName)}</span><span class="text-xs text-green-600 font-mono shrink-0">LIVE</span>`;
+
+    const videoWrapper = document.createElement('div');
+    videoWrapper.className = "relative bg-black w-full aspect-video flex items-center justify-center";
+
+    const videoEl = document.createElement('video');
+    videoEl.className = "w-full h-full";
+    videoEl.autoplay = true;
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.style.backgroundColor = '#000';
+
+    const overlay = document.createElement('div');
+    overlay.className = "absolute inset-0 bg-black/90 text-white flex flex-col items-center justify-center gap-2 px-4 text-center";
+
+    const spinner = document.createElement('div');
+    spinner.className = "w-8 h-8 border-2 border-slate-500 border-t-emerald-400 rounded-full animate-spin";
+
+    const status = document.createElement('p');
+    status.className = "text-sm font-semibold text-slate-200";
+    status.textContent = 'Loading stream...';
+
+    overlay.appendChild(spinner);
+    overlay.appendChild(status);
+    videoWrapper.appendChild(videoEl);
+    videoWrapper.appendChild(overlay);
+
+    const cancelLoad = startVideoLoadSequence(id, videoEl, overlay);
+    streamLoadCancels.set(id, cancelLoad);
+
+    const controlBar = document.createElement('div');
+    controlBar.className = "px-2 py-2 bg-gray-50 border-b border-gray-100 flex items-center";
+
+    const select = document.createElement('select');
+    select.className = "w-full text-xs p-1 border border-gray-300 rounded bg-white focus:outline-none";
+    let selectOptions = '<option value="__ALL__">All Alerts</option>';
+    if (enabledAlerts.length > 0) {
+        selectOptions += enabledAlerts.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join('');
+    }
+    select.innerHTML = selectOptions;
+    if (cardStates[id]) select.value = cardStates[id];
+    select.onchange = (e) => updateCardAlert(id, e.target.value);
+    controlBar.appendChild(select);
+
+    const stats = document.createElement('div');
+    stats.id = `result-${safeId}`;
+    stats.className = "flex-1 overflow-y-auto p-2 bg-white flex flex-col gap-1 min-h-[80px] max-h-[220px]";
+    stats.innerHTML = '<p class="text-xs text-gray-400 italic">Waiting for analysis...</p>';
+
+    card.appendChild(header);
+    card.appendChild(videoWrapper);
+    card.appendChild(controlBar);
+    card.appendChild(stats);
+
+    return card;
+}
+
 function renderGrid() {
     const grid = document.getElementById('video-grid');
-    
-    // Re-render check shortcut (compare CSS-safe IDs)
-    const existingIds = Array.from(grid.children).map(c => c.id.replace('card-', ''));
-    const currentSafeIds = activeStreams.map(id => cssSafeId(id));
-    const sameStreams = currentSafeIds.length === existingIds.length && currentSafeIds.every(id => existingIds.includes(id));
-    if (sameStreams) {
-        // Even if not re-rendering, update dropdowns
-        updateAllDropdowns();
-        return;
-    }
 
-    grid.innerHTML = '';
-    
     if (activeStreams.length === 0) {
+        for (const cancel of streamLoadCancels.values()) {
+            cancel();
+        }
+        streamLoadCancels.clear();
         grid.innerHTML = '<div class="col-span-2 text-gray-400 text-center mt-10">No active streams. Add one from the sidebar.</div>';
         return;
     }
 
     // Get enabled alerts for dropdown
     const enabledAlerts = alertConfig.filter(a => a.enabled);
+    const desiredSafeIds = new Set(activeStreams.map(id => cssSafeId(id)));
+
+    // Remove stale cards and stop their load loops.
+    Array.from(grid.children).forEach(child => {
+        if (!child.id || !child.id.startsWith('card-')) {
+            child.remove();
+            return;
+        }
+        const safeId = child.id.replace('card-', '');
+        if (desiredSafeIds.has(safeId)) {
+            return;
+        }
+        const streamId = child.dataset.streamId || safeId;
+        const cancel = streamLoadCancels.get(streamId);
+        if (cancel) {
+            cancel();
+            streamLoadCancels.delete(streamId);
+        }
+        child.remove();
+    });
 
     activeStreams.forEach(id => {
         // Default state - default to "All Alerts"
         if (!cardStates[id]) {
             cardStates[id] = '__ALL__';
         }
-        
+
         const safeId = cssSafeId(id);
+        const existing = document.getElementById(`card-${safeId}`);
+        if (existing) {
+            return;
+        }
+        grid.appendChild(createStreamCard(id, enabledAlerts));
+    });
+
+    // Keep card headers in sync with latest stream metadata.
+    activeStreams.forEach(id => {
+        const safeId = cssSafeId(id);
+        const card = document.getElementById(`card-${safeId}`);
+        if (!card) return;
         const meta = streamMetadata[id];
         const displayName = (meta && meta.name) ? meta.name : id;
-
-        // Card Container
-        const card = document.createElement('div');
-        card.id = `card-${safeId}`;
-        card.className = "bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden flex flex-col h-full";
-        
-        // Header (with Title + Live Badge)
-        const header = document.createElement('div');
-        header.className = "px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between items-center";
-        header.innerHTML = `<span class="font-bold text-gray-700 text-sm overflow-hidden text-ellipsis whitespace-nowrap mr-2" title="${escapeHtml(id)}">${escapeHtml(displayName)}</span><span class="text-xs text-green-600 font-mono shrink-0">LIVE</span>`;
-
-        // Video Wrapper
-        const videoWrapper = document.createElement('div');
-        videoWrapper.className = "relative bg-black w-full aspect-video flex items-center justify-center";
-        
-        const img = document.createElement('img');
-        img.src = `/video_feed?stream_id=${encodeURIComponent(id)}`;
-        img.className = "w-full h-full object-contain";
-        img.alt = id;
-        videoWrapper.appendChild(img);
-
-        // Control Bar (Alert Selector)
-        const controlBar = document.createElement('div');
-        controlBar.className = "px-2 py-2 bg-gray-50 border-b border-gray-100 flex items-center";
-        const select = document.createElement('select');
-        select.className = "w-full text-xs p-1 border border-gray-300 rounded bg-white focus:outline-none";
-        
-        // Build dropdown options from enabled alerts
-        let selectOptions = '<option value="__ALL__">All Alerts</option>';
-        if (enabledAlerts.length > 0) {
-            selectOptions += enabledAlerts.map(a => `<option value="${escapeHtml(a.name)}">${escapeHtml(a.name)}</option>`).join('');
+        const titleEl = card.querySelector('span.font-bold');
+        if (titleEl) {
+            titleEl.textContent = displayName;
+            titleEl.title = id;
         }
-        select.innerHTML = selectOptions;
-        
-        if (cardStates[id]) select.value = cardStates[id];
-        select.onchange = (e) => updateCardAlert(id, e.target.value);
-        controlBar.appendChild(select);
-
-        // Results Area
-        const stats = document.createElement('div');
-        stats.id = `result-${safeId}`;
-        stats.className = "flex-1 overflow-y-auto p-2 bg-white flex flex-col gap-1 min-h-[80px] max-h-[220px]";
-        stats.innerHTML = '<p class="text-xs text-gray-400 italic">Waiting for analysis...</p>';
-
-        card.appendChild(header);
-        card.appendChild(videoWrapper);
-        card.appendChild(controlBar);
-        card.appendChild(stats);
-        grid.appendChild(card);
     });
+
+    updateAllDropdowns();
 }
 
 async function fetchData() {
@@ -681,7 +917,7 @@ async function fetchData() {
             const safeId = cssSafeId(id);
             const resultDiv = document.getElementById(`result-${safeId}`);
             if (!resultDiv) return;
-            
+
             const selectedAlert = cardStates[id];
             const streamData = json[id];
             renderResultDiv(resultDiv, selectedAlert, streamData);
@@ -989,8 +1225,8 @@ if (document.readyState === 'loading') {
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/&/g, '&amp;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/"/g, '&quot;')
-              .replace(/'/g, '&#039;');
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }

@@ -90,12 +90,12 @@ async def lifespan(app: FastAPI):
 
     # Graceful shutdown
     logger.info("Shutting down ...")
-    
+
     # Shutdown MCP servers
     if settings.MCP_ENABLED:
         logger.info("Shutting down MCP servers...")
         await shutdown_mcp_servers()
-    
+
     # Close alert service client
     if _alert_service:
         await _alert_service.close()
@@ -440,7 +440,7 @@ async def reload_tools_endpoint():
 async def mcp_status():
     """
     Get status of all configured MCP servers.
-    
+
     Returns connection status, transport type, and available tools per server.
     """
     if not settings.MCP_ENABLED:
@@ -449,10 +449,10 @@ async def mcp_status():
             "servers": [],
             "total_tools": 0,
         })
-    
+
     servers = get_mcp_server_status()
     tools = get_mcp_tools()
-    
+
     return JSONResponse(content={
         "enabled": True,
         "servers": servers,
@@ -464,12 +464,12 @@ async def mcp_status():
 async def mcp_tools():
     """
     List all tools available from connected MCP servers.
-    
+
     Tools are prefixed with 'mcp_{server_name}_' to distinguish from built-in tools.
     """
     if not settings.MCP_ENABLED:
         return JSONResponse(content={"tools": [], "count": 0})
-    
+
     tools = get_mcp_tools()
     tool_list = [
         {
@@ -480,7 +480,7 @@ async def mcp_tools():
         }
         for t in tools.values()
     ]
-    
+
     return JSONResponse(content={"tools": tool_list, "count": len(tool_list)})
 
 
@@ -493,13 +493,13 @@ async def mcp_reload():
             "reason": "MCP is disabled",
             "tools_loaded": 0,
         })
-    
+
     try:
         # Reload MCP servers
         from src.agentic.mcp_client import initialize_mcp_servers, shutdown_mcp_servers
         await shutdown_mcp_servers()
         mcp_tools, mcp_schemas = await initialize_mcp_servers()
-        
+
         return JSONResponse(content={
             "status": "ok",
             "tools_loaded": len(mcp_tools),
@@ -517,27 +517,27 @@ async def invoke_mcp_tool(
     """Manually invoke an MCP tool for testing."""
     if not settings.MCP_ENABLED:
         raise HTTPException(status_code=503, detail="MCP is disabled")
-    
+
     tools = get_mcp_tools()
     tool = tools.get(tool_name)
-    
+
     if tool is None:
         raise HTTPException(status_code=404, detail=f"MCP tool '{tool_name}' not found")
-    
+
     # Get the server connection for this tool
     from src.agentic.mcp_client import get_mcp_servers
     servers = get_mcp_servers()
     server = servers.get(tool.server)
-    
+
     if server is None:
         raise HTTPException(
             status_code=503,
             detail=f"MCP server '{tool.server}' is not connected"
         )
-    
+
     params = request.parameters if request else {}
     t0 = time.monotonic()
-    
+
     try:
         result = await server.call_tool(tool_name, params)
         duration_ms = (time.monotonic() - t0) * 1000
@@ -558,7 +558,11 @@ async def invoke_mcp_tool(
 
 @app.get("/runtime-config.js")
 async def runtime_config():
-    payload = {"metricsPort": settings.METRICS_NODEPORT}
+    payload = {
+        "metricsPort": settings.METRICS_NODEPORT,
+        "webrtcSignalingUrl": settings.WEBRTC_SIGNALING_URL,
+        "webrtcSignalingPort": settings.WEBRTC_SIGNALING_PORT,
+    }
     body = f"window.RUNTIME_CONFIG = {json.dumps(payload)};"
     return Response(content=body, media_type="application/javascript")
 

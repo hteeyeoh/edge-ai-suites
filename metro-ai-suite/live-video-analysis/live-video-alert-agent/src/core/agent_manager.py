@@ -8,7 +8,7 @@ Key improvements
 ----------------
 - Concurrent stream analysis: all streams are analysed in parallel via
   asyncio.gather(), so cycle time = max(VLM latency) not sum(VLM latency).
-- Per-stream independent analysis loops 
+- Per-stream independent analysis loops
 - AlertStateManager integration: deduplication, escalation.
 - External alert-agent-service integration for action dispatch via HTTP.
 - Proper AlertConfig (Pydantic) instead of raw dicts for alert configuration.
@@ -32,6 +32,7 @@ import cv2
 from pydantic import ValidationError
 
 from .stream_manager import LiveStreamManager
+from .webrtc_relay import WebRTCRelayManager
 from .vlm_client import VLMClient
 from .event_manager import EventManager
 from .alert_state_manager import AlertStateManager
@@ -206,7 +207,12 @@ class AgentManager:
         self.stream_tools: Dict[str, List[str]] = {}
         self.stream_alerts: Dict[str, List[str]] = {}
         self.stream_names: Dict[str, str] = {}
+        self._stream_urls: Dict[str, str] = {}
         self._pipelines: Dict[str, StreamPipeline] = {}
+        self._webrtc_relays = WebRTCRelayManager(
+            relay_base_url=settings.WEBRTC_RELAY_URL,
+            enabled=settings.WEBRTC_AUTO_PUBLISH,
+        )
         self._stop_event: asyncio.Event = asyncio.Event()
         self._alerts_changed: asyncio.Event = asyncio.Event()
 
@@ -224,6 +230,9 @@ class AgentManager:
 
         for stream_id, mgr in self.streams.items():
             mgr.start()
+            source_url = self._stream_urls.get(stream_id)
+            if source_url:
+                self._webrtc_relays.start(stream_id, source_url)
             self._launch_stream_task(stream_id)
 
         num_workers = max(settings.ACTION_WORKERS, len(self.streams))
@@ -255,6 +264,7 @@ class AgentManager:
         self._action_workers.clear()
         for mgr in self.streams.values():
             mgr.stop()
+        self._webrtc_relays.stop_all()
         # Schedule client cleanup (fire-and-forget safe in shutdown)
         asyncio.ensure_future(self.alert_service.close())
         logger.info("AgentManager stopped")
@@ -289,9 +299,11 @@ class AgentManager:
         self.stream_tools[stream_id] = tools or []
         self.stream_alerts[stream_id] = alerts or []
         self.stream_names[stream_id] = name or stream_id
+        self._stream_urls[stream_id] = rtsp_url
 
         if self.running:
             mgr.start()
+            self._webrtc_relays.start(stream_id, rtsp_url)
             self._launch_stream_task(stream_id)
 
         if save:
@@ -309,6 +321,8 @@ class AgentManager:
         self.latest_results.pop(stream_id, None)
         self._metrics.pop(stream_id, None)
         self._pipelines.pop(stream_id, None)
+        self._stream_urls.pop(stream_id, None)
+        self._webrtc_relays.stop(stream_id)
         self.alert_state.unregister_stream(stream_id)
         self.stream_tools.pop(stream_id, None)
         self.stream_alerts.pop(stream_id, None)

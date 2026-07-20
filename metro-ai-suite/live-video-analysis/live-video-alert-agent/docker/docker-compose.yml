@@ -111,8 +111,54 @@ services:
     networks:
       - app_network
 
+  mediamtx:
+    image: bluenviron/mediamtx:1.15.6
+    container_name: mediamtx
+    restart: unless-stopped
+    environment:
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,live-video-alert-agent,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,live-video-alert-agent,${NO_PROXY:-}
+      - http_proxy=${http_proxy}
+      - HTTP_PROXY=${http_proxy}
+      - https_proxy=${https_proxy}
+      - HTTPS_PROXY=${https_proxy}
+      - MTX_LOGLEVEL=info
+      - MTX_API=no
+      - MTX_RTSP=yes
+      - MTX_RTMP=no
+      - MTX_SRT=no
+      - MTX_HLS=no
+      - MTX_WEBRTCADDRESS=:8889
+      - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-localhost}
+      - MTX_WEBRTCICESERVERS2_0_URL=turn:${HOST_IP:-localhost}:3478
+      - MTX_WEBRTCICESERVERS2_0_USERNAME=${MTX_WEBRTCICESERVERS2_0_USERNAME:-localhost}
+      - MTX_WEBRTCICESERVERS2_0_PASSWORD=${MTX_WEBRTCICESERVERS2_0_PASSWORD:-localpass}
+    ports:
+      - "${WHIP_SERVER_PORT:-8889}:8889"
+      - "8189:8189/udp"
+    networks:
+      - app_network
+
+  coturn:
+    image: coturn/coturn:4.12
+    container_name: coturn
+    restart: unless-stopped
+    environment:
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,live-video-alert-agent,${no_proxy}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,live-video-alert-agent,${NO_PROXY:-}
+      - http_proxy=${http_proxy}
+      - HTTP_PROXY=${http_proxy}
+      - https_proxy=${https_proxy}
+      - HTTPS_PROXY=${https_proxy}
+    ports:
+      - "3478:3478/udp"
+    command: ["-v"]
+    networks:
+      - app_network
+
   live-video-alert-agent:
-    image: ${REGISTRY:-}live-video-alert-agent:${TAG:-latest}
+    # image: ${REGISTRY:-}live-video-alert-agent:${TAG:-latest}
+    image: live-video-alert-agent:test
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -122,11 +168,15 @@ services:
       - "${PORT:-9000}:${PORT:-9000}"
     environment:
       # ---- proxy ----
-      - no_proxy=${no_proxy},ovms-vlm,alert-agent-service,metrics-manager
+      - no_proxy=${no_proxy},ovms-vlm,alert-agent-service,metrics-manager,mediamtx,coturn
       - http_proxy=${http_proxy}
       - https_proxy=${https_proxy}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - RTSP_URL=${RTSP_URL}
+      - WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL:-}
+      - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
+      - WEBRTC_AUTO_PUBLISH=${WEBRTC_AUTO_PUBLISH:-true}
+      - WEBRTC_RELAY_URL=${WEBRTC_RELAY_URL:-rtsp://mediamtx:8554}
       # ---- VLM / OVMS ----
       - MODEL_NAME=${MODEL_NAME:-Phi-3.5-vision}
       # ---- stream capture ----
@@ -141,7 +191,7 @@ services:
       - METRICS_SERVICE_PORT=${METRICS_PORT:-9090}
       # ---- MCP (Model Context Protocol) servers ----
       - MCP_ENABLED=${MCP_ENABLED:-true}
-      
+
     volumes:
       - ../resources:/app/resources
       - ../src/config.py:/app/src/config.py:ro
@@ -163,6 +213,8 @@ services:
         condition: service_healthy
       metrics-manager:
         condition: service_healthy
+      mediamtx:
+        condition: service_started
     networks:
       - app_network
 

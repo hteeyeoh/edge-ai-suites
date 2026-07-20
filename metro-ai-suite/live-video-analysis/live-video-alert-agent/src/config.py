@@ -56,6 +56,12 @@ class Settings:
     CAPTURE_FPS: float = _float("CAPTURE_FPS", 5)  # frames decoded per second
     CAPTURE_RESIZE_HEIGHT: int = _int("CAPTURE_RESIZE_HEIGHT", 0)  # 0 = skip; VLM client resizes
 
+    # WebRTC playback endpoint (served by signaling/media gateway such as mediamtx)
+    WEBRTC_SIGNALING_URL: str = os.getenv("WEBRTC_SIGNALING_URL", "")
+    WEBRTC_SIGNALING_PORT: int = _int("WEBRTC_SIGNALING_PORT", 8889)
+    WEBRTC_AUTO_PUBLISH: bool = _bool("WEBRTC_AUTO_PUBLISH", True)
+    WEBRTC_RELAY_URL: str = os.getenv("WEBRTC_RELAY_URL", "rtsp://mediamtx:8554")
+
     SNAPSHOT_DIR: str = os.getenv("SNAPSHOT_DIR", "snapshots")
     MCP_ENABLED: bool = _bool("MCP_ENABLED", True)
     MCP_CONFIG_FILE: str = os.getenv("MCP_CONFIG_FILE", "resources/mcp_servers.json")
