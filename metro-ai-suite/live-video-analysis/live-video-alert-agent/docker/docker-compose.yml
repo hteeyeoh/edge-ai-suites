@@ -131,6 +131,7 @@ services:
       - MODEL_NAME=${MODEL_NAME:-Phi-3.5-vision}
       # ---- stream capture ----
       - CAPTURE_FPS=${CAPTURE_FPS:-10}
+      - MAX_STREAMS=${MAX_STREAMS:-8}
       # ---- Alert Agent Service ----
       - ALERT_AGENT_SERVICE_URL=http://alert-agent-service:8000/api/v1
       - ALERT_AGENT_SERVICE_TIMEOUT=${ALERT_AGENT_SERVICE_TIMEOUT:-30.0}

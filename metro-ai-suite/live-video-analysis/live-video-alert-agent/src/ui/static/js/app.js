@@ -544,10 +544,6 @@ async function deleteStream(id) {
 }
 
 async function addNewStream() {
-    if (activeStreams.length >= 4) {
-        showToast("Limit reached. Delete an existing stream first", "error");
-        return;
-    }
 
     const name = (document.getElementById('inp-stream-name') || document.getElementById('inp-stream-id'))?.value.trim() || '';
     const url = document.getElementById('inp-stream-url').value.trim();
