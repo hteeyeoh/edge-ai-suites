@@ -91,6 +91,7 @@ class StreamMetrics(BaseModel):
     analysis_count: int = 0
     alert_count: int = 0
     last_inference_ms: Optional[float] = None
+    last_response_lag_ms: Optional[float] = None
 
 
 class SystemMetrics(BaseModel):

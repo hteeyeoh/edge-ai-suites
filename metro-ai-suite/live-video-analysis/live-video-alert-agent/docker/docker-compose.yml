@@ -177,6 +177,9 @@ services:
       - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
       - WEBRTC_AUTO_PUBLISH=${WEBRTC_AUTO_PUBLISH:-true}
       - WEBRTC_RELAY_URL=${WEBRTC_RELAY_URL:-rtsp://mediamtx:8554}
+      - ENABLE_LATENCY_CHECK=${ENABLE_LATENCY_CHECK:-false}
+      - ENABLE_LATENCY_FILE_OUTPUT=${ENABLE_LATENCY_FILE_OUTPUT:-false}
+      - LATENCY_OUTPUT_FILE=${LATENCY_OUTPUT_FILE:-resources/latency_metrics.jsonl}
       # ---- VLM / OVMS ----
       - MODEL_NAME=${MODEL_NAME:-Phi-3.5-vision}
       # ---- stream capture ----
@@ -191,6 +194,7 @@ services:
       - METRICS_SERVICE_PORT=${METRICS_PORT:-9090}
       # ---- MCP (Model Context Protocol) servers ----
       - MCP_ENABLED=${MCP_ENABLED:-true}
+      - VLM_MAX_CONCURRENCY=${VLM_MAX_CONCURRENCY:-4}
 
     volumes:
       - ../resources:/app/resources

@@ -40,10 +40,10 @@ class VLMClient:
         frames: List,
         system_prompt: str,
         user_prompt: str,
-    ) -> Optional[str]:
-        """Send frames to the VLM and return the raw text response, or None on failure."""
+    ) -> Tuple[Optional[str], Optional[float]]:
+        """Send frames to the VLM and return (raw text response, latency_ms)."""
         if not frames:
-            return None
+            return None, None
 
         loop = asyncio.get_running_loop()
 
@@ -66,7 +66,7 @@ class VLMClient:
 
         if not user_content:
             logger.warning("No frames could be encoded — skipping VLM call")
-            return None
+            return None, None
 
         user_content.append({"type": "text", "text": user_prompt})
         messages = [
@@ -106,7 +106,7 @@ class VLMClient:
             logger.error(f"Frame encoding failed: {exc}")
             return None
 
-    async def _call_with_retry(self, messages: list) -> Optional[str]:
+    async def _call_with_retry(self, messages: list) -> Tuple[Optional[str], Optional[float]]:
         """POST to the VLM with up to ``VLM_MAX_RETRIES`` retries."""
         retries = settings.VLM_MAX_RETRIES
         delay = 1.0
@@ -124,7 +124,7 @@ class VLMClient:
                 logger.info(f"VLM inference complete — {self.last_inference_ms:.0f} ms (attempt {attempt + 1})")
                 content = response.choices[0].message.content
                 logger.debug(f"VLM raw response (truncated): {(content or '')[:300]!r}")
-                return content
+                return content, self.last_inference_ms
 
             except (APITimeoutError, APIConnectionError) as exc:
                 if attempt < retries:
@@ -133,15 +133,15 @@ class VLMClient:
                     delay = min(delay * 2, 10.0)
                 else:
                     logger.error(f"VLM call failed after {retries + 1} attempts: {exc}")
-                    return None
+                    return None, None
 
             except APIError as exc:
                 # Non-retryable API error (4xx etc.)
                 logger.error(f"VLM API error: {exc}")
-                return None
+                return None, None
 
             except Exception as exc:
                 logger.error(f"Unexpected VLM error: {exc}")
-                return None
+                return None, None
 
-        return None
+        return None, None

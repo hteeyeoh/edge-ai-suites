@@ -306,6 +306,8 @@ function initSSE() {
             resultsCache[data.stream_id][data.alert_name] = {
                 answer: data.answer,
                 reason: data.reason,
+                latency_ms: data.latency_ms,
+                response_lag_ms: data.response_lag_ms,
             };
             updateStreamResult(data.stream_id, resultsCache[data.stream_id]);
         } catch (err) {
@@ -412,6 +414,14 @@ function renderResultCard(result, alertName) {
     const textClass = isYes ? 'text-red-800' : 'text-green-800';
     const badgeClass = isYes ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
     const icon = isYes ? '⚠️' : '✓';
+    const hasLatency = typeof result.latency_ms === 'number' && Number.isFinite(result.latency_ms);
+    const hasResponseLag = typeof result.response_lag_ms === 'number' && Number.isFinite(result.response_lag_ms);
+    const latencyLine = hasLatency
+        ? `<p class="text-[10px] ${textClass} opacity-70 mt-1">Latency: ${result.latency_ms.toFixed(1)} ms</p>`
+        : '';
+    const lagLine = hasResponseLag
+        ? `<p class="text-[10px] ${textClass} opacity-70">Response lag: ${result.response_lag_ms.toFixed(1)} ms</p>`
+        : '';
 
     return `
         <div class="rounded border p-2 ${bgClass} transition-colors duration-300">
@@ -420,6 +430,8 @@ function renderResultCard(result, alertName) {
                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass}">${escapeHtml(alertName)}</span>
             </div>
             <p class="text-xs ${textClass} opacity-80 leading-tight">${escapeHtml(result.reason || 'No details')}</p>
+            ${latencyLine}
+            ${lagLine}
         </div>
     `;
 }

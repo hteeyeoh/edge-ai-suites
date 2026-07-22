@@ -82,12 +82,26 @@ def _atomic_write_json(path: str | Path, data: object) -> None:
 
 class StreamMetrics:
     """Runtime counters for a single stream."""
-    __slots__ = ("analysis_count", "alert_count", "last_inference_ms")
+    __slots__ = (
+        "analysis_count",
+        "alert_count",
+        "last_inference_ms",
+        "last_response_ts",
+        "last_response_lag_ms",
+    )
 
     def __init__(self):
         self.analysis_count: int = 0
         self.alert_count: int = 0
         self.last_inference_ms: Optional[float] = None
+        self.last_response_ts: Optional[float] = None
+        self.last_response_lag_ms: Optional[float] = None
+
+
+def _append_jsonl(path: Path, entry: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=True) + "\n")
 
 
 class StreamPipeline:
@@ -124,7 +138,7 @@ class StreamPipeline:
 
     async def analyse(
         self, frames: list, enabled: List[AlertConfig],
-    ) -> Optional[dict]:
+    ) -> tuple[Optional[dict], Optional[float]]:
         """Run VLM inference for *enabled* alerts, batching to stay under token limits.
 
         Returns merged {alert_name: {answer, reason}} dict, or None if every
@@ -141,6 +155,7 @@ class StreamPipeline:
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
 
         merged: dict = {}
+        batch_latencies_ms: List[float] = []
         for batch, result in zip(batches, batch_results):
             if isinstance(result, Exception):
                 names = [a.name for a in batch]
@@ -148,25 +163,30 @@ class StreamPipeline:
                     f"[{self.stream_id}] Batch {names} failed: {result}"
                 )
                 continue
-            if result:
-                merged.update(result)
+            parsed_batch, batch_latency_ms = result
+            if parsed_batch:
+                merged.update(parsed_batch)
+            if batch_latency_ms is not None:
+                batch_latencies_ms.append(batch_latency_ms)
 
-        return merged or None
+        # Batches run concurrently; per-cycle latency is the slowest batch call.
+        cycle_latency_ms = max(batch_latencies_ms) if batch_latencies_ms else None
+        return (merged or None), cycle_latency_ms
 
     async def _run_batch(
         self, frames: list, alerts: List[AlertConfig],
-    ) -> Optional[dict]:
+    ) -> tuple[Optional[dict], Optional[float]]:
         """Single VLM call for one batch of alerts."""
         prompt = self._build_prompt(alerts)
         async with self._vlm_semaphore:
-            response = await self._vlm_client.analyze_stream_segment(
+            response, latency_ms = await self._vlm_client.analyze_stream_segment(
                 frames,
                 system_prompt="You are a precise video analytics AI. Always respond with valid JSON.",
                 user_prompt=prompt,
             )
         if not response:
-            return None
-        return self._parse_response(response, alerts)
+            return None, latency_ms
+        return self._parse_response(response, alerts), latency_ms
 
 
 class AgentManager:
@@ -215,12 +235,36 @@ class AgentManager:
         )
         self._stop_event: asyncio.Event = asyncio.Event()
         self._alerts_changed: asyncio.Event = asyncio.Event()
+        self._latency_file_lock: asyncio.Lock = asyncio.Lock()
 
         self.running = False
         self._start_time: Optional[float] = None
 
         self.alerts: List[AlertConfig] = self._load_alerts_config()
         self._load_streams_config()
+
+    async def _record_latency_sample(
+        self,
+        stream_id: str,
+        latency_ms: Optional[float],
+        response_lag_ms: Optional[float],
+        alert_count: int,
+    ) -> None:
+        if not settings.ENABLE_LATENCY_FILE_OUTPUT:
+            return
+
+        payload = {
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "stream_id": stream_id,
+            "latency_ms": round(latency_ms, 1) if latency_ms is not None else None,
+            "response_lag_ms": round(response_lag_ms, 1) if response_lag_ms is not None else None,
+            "alerts_evaluated": alert_count,
+            "model": self.vlm_client.model_name,
+        }
+
+        output_path = Path(settings.LATENCY_OUTPUT_FILE)
+        async with self._latency_file_lock:
+            await asyncio.to_thread(_append_jsonl, output_path, payload)
 
     async def start(self):
         """Start all registered stream managers and their analysis loops."""
@@ -433,6 +477,7 @@ class AgentManager:
                 "analysis_count": m.analysis_count,
                 "alert_count": m.alert_count,
                 "last_inference_ms": m.last_inference_ms,
+                "last_response_lag_ms": m.last_response_lag_ms,
             })
         return results
 
@@ -547,15 +592,37 @@ class AgentManager:
             f"alerts={[a.name for a in enabled]}"
         )
 
-        parsed = await pipeline.analyse(frames, enabled)
+        parsed, inference_ms = await pipeline.analyse(frames, enabled)
 
         metrics = self._metrics.get(stream_id)
+        response_lag_ms: Optional[float] = None
         if metrics:
+            now = time.monotonic()
+            if metrics.last_response_ts is not None:
+                response_lag_ms = (now - metrics.last_response_ts) * 1000
+            metrics.last_response_ts = now
+            metrics.last_response_lag_ms = response_lag_ms
             metrics.analysis_count += 1
-            metrics.last_inference_ms = self.vlm_client.last_inference_ms
+            metrics.last_inference_ms = inference_ms
 
         if not parsed:
             return
+
+        if settings.ENABLE_LATENCY_CHECK and inference_ms is not None:
+            latency_ms = round(inference_ms, 1)
+            for entry in parsed.values():
+                if isinstance(entry, dict):
+                    entry["latency_ms"] = latency_ms
+                    if response_lag_ms is not None:
+                        entry["response_lag_ms"] = round(response_lag_ms, 1)
+
+        if settings.ENABLE_LATENCY_CHECK:
+            await self._record_latency_sample(
+                stream_id=stream_id,
+                latency_ms=inference_ms,
+                response_lag_ms=response_lag_ms,
+                alert_count=len(enabled),
+            )
 
         logger.info(f"[{stream_id}] VLM results: {list(parsed.keys())}")
 
@@ -564,7 +631,7 @@ class AgentManager:
             "stream_id": stream_id,
             "stream_name": self.stream_names.get(stream_id, stream_id),
             "results": parsed,
-            "inference_ms": self.vlm_client.last_inference_ms,
+            "inference_ms": inference_ms,
             "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         }))
         await self._process_alerts(stream_id, enabled, parsed, frame_ref, frame_captured_ts)
@@ -590,6 +657,8 @@ class AgentManager:
 
             answer = result.get("answer", "NO")
             reason = result.get("reason", "")
+            latency_ms = result.get("latency_ms")
+            response_lag_ms = result.get("response_lag_ms")
 
             should_act, is_escalation, is_transition = self.alert_state.process(
                 stream_id=stream_id,
@@ -641,6 +710,8 @@ class AgentManager:
                     "alert_name": alert_cfg.name,
                     "answer": answer,
                     "reason": reason,
+                    "latency_ms": latency_ms,
+                    "response_lag_ms": response_lag_ms,
                     "escalated": is_escalation,
                     "consecutive_count": consecutive_count,
                     "is_transition": is_transition,

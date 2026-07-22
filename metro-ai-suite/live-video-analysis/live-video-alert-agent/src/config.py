@@ -61,6 +61,9 @@ class Settings:
     WEBRTC_SIGNALING_PORT: int = _int("WEBRTC_SIGNALING_PORT", 8889)
     WEBRTC_AUTO_PUBLISH: bool = _bool("WEBRTC_AUTO_PUBLISH", True)
     WEBRTC_RELAY_URL: str = os.getenv("WEBRTC_RELAY_URL", "rtsp://mediamtx:8554")
+    ENABLE_LATENCY_CHECK: bool = _bool("ENABLE_LATENCY_CHECK", False)
+    ENABLE_LATENCY_FILE_OUTPUT: bool = _bool("ENABLE_LATENCY_FILE_OUTPUT", False)
+    LATENCY_OUTPUT_FILE: str = os.getenv("LATENCY_OUTPUT_FILE", "resources/latency_metrics.jsonl")
 
     SNAPSHOT_DIR: str = os.getenv("SNAPSHOT_DIR", "snapshots")
     MCP_ENABLED: bool = _bool("MCP_ENABLED", True)
