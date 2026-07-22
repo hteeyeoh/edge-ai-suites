@@ -873,19 +873,29 @@ class AgentManager:
 
     def _build_vlm_prompt(self, enabled: List[AlertConfig]) -> str:
         """Build a compact multi-question JSON prompt for all enabled alerts."""
-        questions = {a.name: a.prompt for a in enabled}
+        questions = {
+            a.name: {
+                "question": a.prompt,
+                "include_reason": a.include_reason,
+            }
+            for a in enabled
+        }
+        response_shape = {
+            a.name: (
+                {"answer": "YES or NO", "reason": "brief explanation"}
+                if a.include_reason
+                else {"answer": "YES or NO"}
+            )
+            for a in enabled
+        }
         return (
-            "Answer each question about this image with YES or NO "
-            "and a brief reason.\n"
+            "Answer each question about this image with YES or NO.\n"
+            "Return a reason only for entries where include_reason=true.\n"
             f"{json.dumps(questions)}\n"
             "Reply ONLY with valid JSON (no markdown). "
-            "Each answer MUST be an object with \"answer\" and \"reason\" keys.\n"
-            "Example: {\"Fire Detection\": {\"answer\": \"NO\", \"reason\": \"no flames or smoke visible\"}}\n"
-            "Response:\n"
-            "{" + ", ".join(
-                f'"{a.name}": {{"answer": "YES or NO", "reason": "brief explanation"}}'
-                for a in enabled
-            ) + "}"
+            "Each answer MUST be an object with an \"answer\" key. "
+            "Only include \"reason\" when include_reason=true for that alert.\n"
+            f"Response schema example: {json.dumps(response_shape)}"
         )
 
     def _parse_vlm_response(
@@ -910,16 +920,43 @@ class AgentManager:
                 raw = data.get(alert_cfg.name)
                 if raw is None:
                     logger.warning(f"VLM omitted answer for alert '{alert_cfg.name}'")
-                    validated[alert_cfg.name] = {"answer": "NO", "reason": "No response from VLM"}
+                    validated[alert_cfg.name] = {
+                        "answer": "NO",
+                        "reason": "No response from VLM" if alert_cfg.include_reason else "",
+                    }
                     continue
                 try:
-                    if isinstance(raw.get("answer"), str):
-                        raw["answer"] = raw["answer"].strip().upper()
-                    result = AgentResult(**raw)
-                    validated[alert_cfg.name] = result.model_dump()
+                    # Accept either {"answer": "YES"} or "YES" for no-reason alerts.
+                    if isinstance(raw, str):
+                        raw = {"answer": raw}
+                    if not isinstance(raw, dict):
+                        raise ValueError("Result must be a JSON object")
+
+                    answer = raw.get("answer")
+                    if isinstance(answer, str):
+                        answer = answer.strip().upper()
+
+                    if answer not in ("YES", "NO"):
+                        raise ValueError(f"Invalid answer '{answer}'")
+
+                    reason = str(raw.get("reason", "")).strip()
+                    if alert_cfg.include_reason:
+                        result = AgentResult(answer=answer, reason=reason)
+                        validated[alert_cfg.name] = result.model_dump()
+                    else:
+                        validated[alert_cfg.name] = {"answer": answer, "reason": ""}
                 except ValidationError as exc:
                     logger.warning(f"Validation failed for '{alert_cfg.name}': {exc} | raw={raw}")
-                    validated[alert_cfg.name] = {"answer": "NO", "reason": "Validation error"}
+                    validated[alert_cfg.name] = {
+                        "answer": "NO",
+                        "reason": "Validation error" if alert_cfg.include_reason else "",
+                    }
+                except ValueError as exc:
+                    logger.warning(f"Validation failed for '{alert_cfg.name}': {exc} | raw={raw}")
+                    validated[alert_cfg.name] = {
+                        "answer": "NO",
+                        "reason": "Validation error" if alert_cfg.include_reason else "",
+                    }
 
             return validated
 

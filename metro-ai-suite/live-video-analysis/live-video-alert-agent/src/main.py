@@ -394,6 +394,7 @@ async def update_alerts_config(
     - name (str, required)
     - prompt (str, required)
     - enabled (bool, default true)
+    - include_reason (bool, default true; when false, VLM should return YES/NO only)
     - tools (list of tool names, default [\"log_alert\"])
     - escalation (optional: {threshold_consecutive, additional_tools})
     """

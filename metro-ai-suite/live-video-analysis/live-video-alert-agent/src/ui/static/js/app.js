@@ -422,6 +422,7 @@ function renderResultCard(result, alertName) {
     const lagLine = hasResponseLag
         ? `<p class="text-[10px] ${textClass} opacity-70">Response lag: ${result.response_lag_ms.toFixed(1)} ms</p>`
         : '';
+    const reason = typeof result.reason === 'string' ? result.reason : '';
 
     return `
         <div class="rounded border p-2 ${bgClass} transition-colors duration-300">
@@ -429,7 +430,7 @@ function renderResultCard(result, alertName) {
                 <span class="font-bold text-xs uppercase ${textClass}">${icon} ${result.answer}</span>
                 <span class="text-[10px] px-1.5 py-0.5 rounded font-medium ${badgeClass}">${escapeHtml(alertName)}</span>
             </div>
-            <p class="text-xs ${textClass} opacity-80 leading-tight">${escapeHtml(result.reason || 'No details')}</p>
+            <p class="text-xs ${textClass} opacity-80 leading-tight">${escapeHtml(reason)}</p>
             ${latencyLine}
             ${lagLine}
         </div>
@@ -468,6 +469,11 @@ async function loadAlertConfig() {
     try {
         const res = await fetch('/config/alerts');
         alertConfig = await res.json();
+        // Backward compatibility for older saved configs.
+        alertConfig = alertConfig.map(a => ({
+            ...a,
+            include_reason: a.include_reason !== false,
+        }));
         renderAlertConfig();
     } catch (e) {
         console.error("Failed to load alert config:", e);
@@ -505,6 +511,13 @@ function renderAlertConfig() {
                        class="w-full text-xs font-semibold text-slate-700 bg-slate-100 border-0 rounded px-2.5 py-1.5 focus:bg-white focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 transition-all outline-none"
                        placeholder="Alert Name"
                        onchange="updateAlertName(${index}, this.value)">
+                <label class="flex items-center gap-2 text-[10px] text-slate-500">
+                    <input type="checkbox"
+                           class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-offset-0 focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                           ${alertEntry.include_reason !== false ? 'checked' : ''}
+                           onchange="toggleIncludeReason(${index}, this.checked)">
+                    Include reason in model response
+                </label>
                 <textarea class="w-full text-[11px] text-slate-600 bg-slate-100 border-0 rounded px-2.5 py-1.5 resize-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-400 transition-all outline-none leading-relaxed"
                           rows="2"
                           placeholder="Describe visual condition (e.g., Is there fire?)"
@@ -530,6 +543,7 @@ function addAlert() {
         name: `Alert ${num}`,
         prompt: "",
         enabled: true,
+        include_reason: true,
         tools: ["log_alert", "capture_snapshot"]
     });
     renderAlertConfig();
@@ -555,6 +569,10 @@ function updateAlertName(index, name) {
 
 function updateAlertPrompt(index, prompt) {
     alertConfig[index].prompt = prompt;
+}
+
+function toggleIncludeReason(index, includeReason) {
+    alertConfig[index].include_reason = includeReason;
 }
 
 async function saveAlerts() {

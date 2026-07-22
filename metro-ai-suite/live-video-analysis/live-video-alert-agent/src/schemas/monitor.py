@@ -43,6 +43,8 @@ class AlertConfig(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
     prompt: str = Field(..., min_length=5, max_length=500)
     enabled: bool = True
+    # If true, request a short reason from the VLM. If false, request only YES/NO.
+    include_reason: bool = True
     # Tool names to invoke when this alert fires (answer == YES).
     tools: List[str] = Field(default_factory=lambda: ["log_alert", "capture_snapshot"])
     # Per-tool argument overrides. Keys are tool names, values are dicts of
