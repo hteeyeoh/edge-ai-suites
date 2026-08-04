@@ -1,0 +1,5 @@
+.env
+.venv/
+.coverage
+shared/
+*__pycache__*

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<!-- Copyright (C) 2025 Intel Corporation -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scene Intelligence</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+
+<body>
+    <header class="topbar">
+        <h1>Scene Intelligence</h1>
+        <span id="status-pill" class="pill pill--idle">connecting…</span>
+    </header>
+
+    <main class="layout">
+        <aside class="left-column">
+            <section class="control-panel">
+                <h2>RTSP Source</h2>
+                <form id="rtsp-form" class="rtsp-form" autocomplete="off">
+                    <label for="rtsp-url">RTSP URL</label>
+                    <input id="rtsp-url" name="url" type="url" inputmode="url"
+                        placeholder="rtsp://user:password@host:554/stream" required />
+                    <label for="stream-id">Stream ID (optional)</label>
+                    <input id="stream-id" name="stream_id" type="text" inputmode="text" maxlength="48"
+                        placeholder="camera-lobby" />
+                    <button id="rtsp-submit" type="submit">Add Stream</button>
+                    <p id="rtsp-message" class="form-message" aria-live="polite"></p>
+                </form>
+            </section>
+
+            <section class="metrics-panel">
+                <div class="metrics-header">
+                    <h2>Device Usage</h2>
+                    <span id="metrics-connection"
+                        class="metrics-connection metrics-connection--idle">disconnected</span>
+                </div>
+                <div class="metrics-values">
+                    <span class="metric-chip metric-chip--cpu">CPU <strong id="cpu-val">-</strong></span>
+                    <span class="metric-chip metric-chip--ram">RAM <strong id="ram-val">-</strong></span>
+                    <span class="metric-chip metric-chip--gpu">GPU <strong id="gpu-val">-</strong></span>
+                    <span class="metric-chip metric-chip--npu">NPU <strong id="npu-val">-</strong></span>
+                </div>
+                <canvas id="metrics-canvas" class="metrics-canvas" width="640" height="220"></canvas>
+            </section>
+        </aside>
+
+        <section class="video-panel">
+            <div class="video-panel-head">
+                <h2>Playback</h2>
+                <p class="video-panel-subtitle">Each stream runs in its own player.</p>
+            </div>
+            <div id="streams-grid" class="streams-grid"></div>
+            <p id="streams-empty" class="streams-empty">No streams yet. Add one from the left panel.</p>
+        </section>
+    </main>
+
+    <script src="/runtime-config.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+
+</html>

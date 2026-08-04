@@ -1,0 +1,360 @@
+/* Copyright (C) 2026 Intel Corporation */
+/* SPDX-License-Identifier: Apache-2.0 */
+
+:root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2f81f7;
+    --ok: #3fb950;
+    --idle: #d29922;
+    --err: #f85149;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.9rem 1.5rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+}
+
+.topbar h1 {
+    font-size: 1.1rem;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.pill {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.pill--ok {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--ok);
+}
+
+.pill--idle {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--idle);
+}
+
+.pill--err {
+    background: rgba(248, 81, 73, 0.15);
+    color: var(--err);
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1.25rem;
+    padding: 1.25rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.left-column {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+}
+
+.control-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+    height: fit-content;
+}
+
+.control-panel h2 {
+    margin: 0 0 0.75rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.rtsp-form {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.rtsp-form label {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.rtsp-form input {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: #0f141b;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 0.65rem 0.75rem;
+    font-size: 0.9rem;
+}
+
+.rtsp-form input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.2);
+}
+
+.rtsp-form button {
+    border: 1px solid #1f6feb;
+    background: #1f6feb;
+    color: #fff;
+    border-radius: 8px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.rtsp-form button:hover {
+    background: #2f81f7;
+}
+
+.rtsp-form button:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.form-message {
+    min-height: 1.1rem;
+    margin: 0;
+    font-size: 0.82rem;
+    color: var(--muted);
+    word-break: break-word;
+}
+
+.metrics-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+}
+
+.metrics-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+}
+
+.metrics-header h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.metrics-connection {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+}
+
+.metrics-connection--ok {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--ok);
+}
+
+.metrics-connection--idle {
+    background: rgba(210, 153, 34, 0.15);
+    color: var(--idle);
+}
+
+.metrics-values {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+    margin-bottom: 0.65rem;
+}
+
+.metric-chip {
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 0.32rem 0.45rem;
+    font-size: 0.76rem;
+    color: var(--muted);
+}
+
+.metric-chip strong {
+    color: var(--text);
+    font-weight: 600;
+    margin-left: 0.35rem;
+}
+
+.metric-chip--cpu {
+    border-color: rgba(26, 208, 255, 0.35);
+}
+
+.metric-chip--ram {
+    border-color: rgba(140, 160, 194, 0.35);
+}
+
+.metric-chip--gpu {
+    border-color: rgba(255, 179, 71, 0.35);
+}
+
+.metric-chip--npu {
+    border-color: rgba(179, 136, 255, 0.35);
+}
+
+.metrics-canvas {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: #0f141b;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.video-panel {
+    min-width: 0;
+}
+
+.video-panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.video-panel-head h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.video-panel-subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+
+.streams-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.streams-empty {
+    margin: 0.85rem 0 0;
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
+.stream-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.85rem;
+}
+
+.stream-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.55rem;
+}
+
+.stream-id {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.stream-stop {
+    border: 1px solid rgba(248, 81, 73, 0.7);
+    background: rgba(248, 81, 73, 0.12);
+    color: #ffb3ae;
+    border-radius: 8px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.stream-stop:hover {
+    background: rgba(248, 81, 73, 0.2);
+}
+
+.stream-stop:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.stream-meta {
+    margin: 0 0 0.55rem;
+    color: var(--muted);
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+.stream-frame {
+    position: relative;
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stream-frame video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.stream-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 800px) {
+    .layout {
+        grid-template-columns: 1fr;
+    }
+}

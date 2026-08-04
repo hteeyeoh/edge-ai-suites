@@ -1,0 +1,127 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+name: ${PROJECT_NAME:-scene-intelligence}
+
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:1.15.6
+    container_name: mediamtx
+    restart: unless-stopped
+    environment:
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,scene-intelligence,metrics-manager,${no_proxy:-}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,scene-intelligence,metrics-manager,${NO_PROXY:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - MTX_LOGLEVEL=info
+      - MTX_API=no
+      - MTX_RTSP=yes
+      - MTX_RTMP=no
+      - MTX_SRT=no
+      - MTX_HLS=no
+      - MTX_WEBRTC=yes
+      - MTX_WEBRTCADDRESS=:8889
+      - MTX_WEBRTCADDITIONALHOSTS=${HOST_IP:-localhost}
+      - MTX_WEBRTCICESERVERS2_0_URL=turn:${HOST_IP:-localhost}:3478
+      - MTX_WEBRTCICESERVERS2_0_USERNAME=${TURN_USERNAME:-scene}
+      - MTX_WEBRTCICESERVERS2_0_PASSWORD=${TURN_PASSWORD:-scenepass}
+    ports:
+      - "${RTSP_SERVER_PORT:-8554}:8554"
+      - "${WHEP_SERVER_PORT:-8889}:8889"
+      - "8189:8189/udp"
+    networks:
+      - app_network
+
+  coturn:
+    image: coturn/coturn:4.12
+    container_name: coturn
+    restart: unless-stopped
+    environment:
+      - no_proxy=localhost,127.0.0.1,mediamtx,coturn,scene-intelligence,metrics-manager,${no_proxy:-}
+      - NO_PROXY=localhost,127.0.0.1,mediamtx,coturn,scene-intelligence,metrics-manager,${NO_PROXY:-}
+    ports:
+      - "3478:3478/udp"
+    command: ["-v"]
+    networks:
+      - app_network
+
+  metrics-manager:
+    image: docker.io/intel/metrics-manager:2026.2.0-20260715-weekly
+    container_name: metrics-manager
+    environment:
+      - no_proxy=localhost,127.0.0.1,scene-intelligence,metrics-manager,${no_proxy:-}
+      - NO_PROXY=localhost,127.0.0.1,scene-intelligence,metrics-manager,${NO_PROXY:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - METRICS_PORT=9090
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+      - PROMETHEUS_POLLER_INTERVAL_MS=${METRICS_POLL_INTERVAL_MS:-1000}
+    ports:
+      - "${METRICS_SERVICE_PORT:-9090}:9090"
+      - "9273:9273"
+    privileged: true
+    pid: host
+    security_opt:
+      - apparmor:unconfined
+    devices:
+      - "/dev/dri:/dev/dri"
+    volumes:
+      - "/sys:/sys:ro"
+      - "/run:/run:ro"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9090/health', timeout=8)"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: on-failure:5
+    networks:
+      - app_network
+
+  scene-intelligence:
+    image: scene-intelligence:${TAG:-latest}
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: scene-intelligence
+    restart: unless-stopped
+    ports:
+      - "${PORT:-9100}:9100"
+    environment:
+      # ---- proxy ----
+      - no_proxy=${no_proxy:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      # ---- server ----
+      - PORT=9100
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # ---- stream source ----
+      - RTSP_URL=${RTSP_URL:-}
+      - RTSP_TRANSPORT=${RTSP_TRANSPORT:-tcp}
+      - RTSP_TIMEOUT=${RTSP_TIMEOUT:-15.0}
+      # ---- WebRTC rendering ----
+      - WEBRTC_AUTO_PUBLISH=${WEBRTC_AUTO_PUBLISH:-true}
+      - WEBRTC_RELAY_URL=${WEBRTC_RELAY_URL:-rtsp://mediamtx:8554}
+      - WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL:-}
+      - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
+      - METRICS_SERVICE_PORT=${METRICS_SERVICE_PORT:-9090}
+      - MAX_STREAMS=${MAX_STREAMS:-8}
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9100/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      mediamtx:
+        condition: service_started
+      metrics-manager:
+        condition: service_healthy
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
