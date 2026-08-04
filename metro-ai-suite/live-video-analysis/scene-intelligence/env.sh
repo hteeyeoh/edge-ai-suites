@@ -38,4 +38,15 @@ export WEBRTC_AUTO_PUBLISH="${WEBRTC_AUTO_PUBLISH:-true}"
 export TURN_USERNAME="${TURN_USERNAME:-scene}"
 export TURN_PASSWORD="${TURN_PASSWORD:-scenepass}"
 
+# ---- VLM inference (OpenVINO GenAI) ----
+export VLM_ENABLED="${VLM_ENABLED:-true}"
+export VLM_MODEL="${VLM_MODEL:-InternVL2-1B}"
+export VLM_DEVICE="${VLM_DEVICE:-CPU}"
+export VLM_INTERVAL="${VLM_INTERVAL:-2.0}"
+export VLM_MAX_TOKENS="${VLM_MAX_TOKENS:-100}"
+# Host 'render' group id so the container may access /dev/dri for GPU/NPU.
+export RENDER_GROUP_ID="${RENDER_GROUP_ID:-$(getent group render 2>/dev/null | cut -d: -f3)}"
+export RENDER_GROUP_ID="${RENDER_GROUP_ID:-992}"
+
 echo "[env.sh] HOST_IP=${HOST_IP} WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL}"
+echo "[env.sh] VLM_DEVICE=${VLM_DEVICE} VLM_MODEL=${VLM_MODEL} RENDER_GROUP_ID=${RENDER_GROUP_ID}"

@@ -23,13 +23,22 @@
                 <form id="rtsp-form" class="rtsp-form" autocomplete="off">
                     <label for="rtsp-url">RTSP URL</label>
                     <input id="rtsp-url" name="url" type="url" inputmode="url"
-                        placeholder="rtsp://user:password@host:554/stream" required />
+                        placeholder="rtsp://<your-rtsp-url>:<port>/<stream>" required />
                     <label for="stream-id">Stream ID (optional)</label>
                     <input id="stream-id" name="stream_id" type="text" inputmode="text" maxlength="48"
                         placeholder="camera-lobby" />
                     <button id="rtsp-submit" type="submit">Add Stream</button>
                     <p id="rtsp-message" class="form-message" aria-live="polite"></p>
                 </form>
+            </section>
+
+            <section class="control-panel">
+                <h2>Alert Configuration</h2>
+                <div class="rtsp-form">
+                    <label for="alert-event">Alert Event</label>
+                    <input id="alert-event" name="alert_event" type="text" inputmode="text" maxlength="120"
+                        placeholder="fire, accident, smoke" required />
+                </div>
             </section>
 
             <section class="metrics-panel">
@@ -51,7 +60,6 @@
         <section class="video-panel">
             <div class="video-panel-head">
                 <h2>Playback</h2>
-                <p class="video-panel-subtitle">Each stream runs in its own player.</p>
             </div>
             <div id="streams-grid" class="streams-grid"></div>
             <p id="streams-empty" class="streams-empty">No streams yet. Add one from the left panel.</p>

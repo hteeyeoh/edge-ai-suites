@@ -107,7 +107,24 @@ services:
       - WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL:-}
       - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
       - METRICS_SERVICE_PORT=${METRICS_SERVICE_PORT:-9090}
+      # ---- VLM inference (OpenVINO GenAI) ----
+      - VLM_ENABLED=${VLM_ENABLED:-true}
+      - VLM_MODELS_DIR=/models
+      - VLM_MODEL=${VLM_MODEL:-InternVL2-1B}
+      - VLM_DEVICE=${VLM_DEVICE:-CPU}
+      - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
+      - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
       - MAX_STREAMS=${MAX_STREAMS:-8}
+    volumes:
+      # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
+      - "./ov_models:/models:ro"
+    # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
+    # Harmless for CPU inference; requires the host Intel compute runtime.
+    devices:
+      - "/dev/dri:/dev/dri"
+      - "/dev/accel:/dev/accel"
+    group_add:
+      - "${RENDER_GROUP_ID:-992}"
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:9100/health"]
       interval: 30s

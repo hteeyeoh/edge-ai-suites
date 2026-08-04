@@ -280,6 +280,14 @@ body {
     padding: 0.85rem;
 }
 
+.stream-card--alert {
+    border-color: rgba(248, 81, 73, 0.9);
+    box-shadow:
+        0 0 0 1px rgba(248, 81, 73, 0.4),
+        0 0 16px rgba(248, 81, 73, 0.45),
+        0 0 28px rgba(248, 81, 73, 0.25);
+}
+
 .stream-head {
     display: flex;
     justify-content: space-between;
@@ -316,6 +324,53 @@ body {
     cursor: not-allowed;
 }
 
+.stream-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.stream-info-btn {
+    width: 1.7rem;
+    height: 1.7rem;
+    border: 1px solid rgba(47, 129, 247, 0.6);
+    background: rgba(47, 129, 247, 0.12);
+    color: #a9ccff;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    line-height: 1;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.stream-info-btn:hover {
+    background: rgba(47, 129, 247, 0.22);
+}
+
+.stream-info-btn--active {
+    background: rgba(47, 129, 247, 0.28);
+}
+
+.stream-info-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.stream-alert-details {
+    margin: 0 0 0.55rem;
+    display: inline-block;
+    font-size: 0.78rem;
+    color: #a9ccff;
+    border: 1px solid rgba(47, 129, 247, 0.35);
+    border-radius: 999px;
+    padding: 0.18rem 0.5rem;
+    background: rgba(47, 129, 247, 0.1);
+}
+
+.stream-alert-details--hidden {
+    display: none;
+}
+
 .stream-meta {
     margin: 0 0 0.55rem;
     color: var(--muted);
@@ -342,6 +397,17 @@ body {
     display: block;
 }
 
+.stream-vlm-metrics {
+    margin: 0.52rem 0 0;
+    padding: 0.38rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    color: #9fb0c8;
+    font-size: 0.77rem;
+    letter-spacing: 0.15px;
+}
+
 .stream-overlay {
     position: absolute;
     inset: 0;
@@ -351,6 +417,31 @@ body {
     color: var(--muted);
     font-size: 0.85rem;
     background: rgba(0, 0, 0, 0.4);
+}
+
+.stream-caption {
+    margin: 0.6rem 0 0;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--muted);
+    font-size: 0.85rem;
+    line-height: 1.35;
+    font-style: italic;
+}
+
+.stream-caption--active {
+    border-left-color: var(--ok, #3fb950);
+    color: var(--fg, #e6edf3);
+    font-style: normal;
+}
+
+.stream-caption--alert {
+    border-left-color: var(--err, #f85149);
+    background: rgba(248, 81, 73, 0.1);
+    color: #ffd6d3;
 }
 
 @media (max-width: 800px) {

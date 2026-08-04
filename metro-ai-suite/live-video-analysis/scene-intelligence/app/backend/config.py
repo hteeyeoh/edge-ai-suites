@@ -60,11 +60,42 @@ class Settings:
     # Metrics-manager SSE port used by the UI device-usage panel.
     METRICS_SERVICE_PORT: int = _int("METRICS_SERVICE_PORT", 9090)
 
+    # ---- VLM inference (OpenVINO GenAI) ----
+    # When true, each stream decodes sampled frames and captions them with the
+    # OpenVINO GenAI VLM pipeline.
+    VLM_ENABLED: bool = _bool("VLM_ENABLED", True)
+
+    # Root of the mounted model tree. Models are organised per device as
+    # <VLM_MODELS_DIR>/<device>/<VLM_MODEL>, e.g. /models/cpu/InternVL2-1B.
+    VLM_MODELS_DIR: str = os.getenv("VLM_MODELS_DIR", "/models")
+    VLM_MODEL: str = os.getenv("VLM_MODEL", "InternVL2-1B")
+
+    # Inference device: CPU, GPU or NPU (selects the matching model subfolder).
+    VLM_DEVICE: str = os.getenv("VLM_DEVICE", "CPU")
+
+    # Alert prompt template used to construct the final VLM prompt from a
+    # user-provided alert event (e.g. "fire", "accident").
+    ALERT_PROMPT_TEMPLATE: str = (
+        'Is there {event} happened/detected? Answer only with "Yes" or "No".'
+    )
+
+    # Seconds between inferences per stream and the token budget per caption.
+    VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
+    VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 100)
+
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
 
 
 settings = Settings()
+
+
+def build_alert_prompt(alert_event: str) -> str:
+    """Build a binary-response VLM prompt from a user-provided alert event."""
+    event_text = " ".join(str(alert_event or "").strip().split())
+    if not event_text:
+        raise ValueError("'alert_event' must not be empty")
+    return settings.ALERT_PROMPT_TEMPLATE.format(event=event_text)
 
 
 def setup_logging() -> None:

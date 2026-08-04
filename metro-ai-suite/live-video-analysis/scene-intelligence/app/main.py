@@ -21,7 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from backend.config import settings, setup_logging
+from backend.config import build_alert_prompt, settings, setup_logging
 from backend.registry import StreamRegistry
 
 setup_logging()
@@ -115,11 +115,17 @@ async def list_streams():
             {
                 "stream_id": manager.stream_id,
                 "url": manager.source_url,
+                "alert_event": manager.alert_event,
                 "publishing": h.publishing,
                 "codec": h.codec,
                 "resolution": h.resolution,
                 "reconnect_count": h.reconnect_count,
                 "whep_path": f"/{manager.stream_id}/whep",
+                "caption": h.caption,
+                "caption_ts": h.caption_ts,
+                "ttft_ms": h.ttft_ms,
+                "tpot_ms": h.tpot_ms,
+                "throughput_tps": h.throughput_tps,
             }
         )
     return {"streams": result}
@@ -129,10 +135,25 @@ async def list_streams():
 async def add_stream(payload: dict):
     source_url = (payload or {}).get("url", "").strip()
     stream_id = (payload or {}).get("stream_id", "").strip() or "default"
+    alert_event = (payload or {}).get("alert_event", "")
+    normalized_alert_event = ""
+    if isinstance(alert_event, str):
+        normalized_alert_event = " ".join(alert_event.strip().split())
+    prompt = ""
     if not source_url:
         raise HTTPException(status_code=400, detail="'url' is required")
+    if settings.VLM_ENABLED:
+        if not isinstance(alert_event, str) or not alert_event.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="'alert_event' is required when VLM is enabled",
+            )
+        try:
+            prompt = build_alert_prompt(normalized_alert_event)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
     try:
-        registry.add(stream_id, source_url)
+        registry.add(stream_id, source_url, prompt, normalized_alert_event)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return {"status": "added", "stream_id": stream_id}

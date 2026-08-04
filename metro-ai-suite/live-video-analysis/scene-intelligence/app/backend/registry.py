@@ -22,7 +22,13 @@ class StreamRegistry:
         self._streams: Dict[str, StreamManager] = {}
         self._lock = threading.Lock()
 
-    def add(self, stream_id: str, source_url: str) -> StreamManager:
+    def add(
+        self,
+        stream_id: str,
+        source_url: str,
+        vlm_prompt: str = "",
+        alert_event: str = "",
+    ) -> StreamManager:
         if not source_url:
             raise ValueError("source_url must not be empty")
         with self._lock:
@@ -30,7 +36,7 @@ class StreamRegistry:
                 raise ValueError(f"Stream '{stream_id}' already exists")
             if len(self._streams) >= settings.MAX_STREAMS:
                 raise ValueError(f"Maximum of {settings.MAX_STREAMS} streams reached")
-            manager = StreamManager(stream_id, source_url)
+            manager = StreamManager(stream_id, source_url, vlm_prompt, alert_event)
             self._streams[stream_id] = manager
         manager.start()
         return manager

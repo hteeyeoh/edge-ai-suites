@@ -15,6 +15,7 @@ inference.
 
 from __future__ import annotations
 
+import errno
 import logging
 import threading
 import time
@@ -37,20 +38,40 @@ class StreamHealth:
     codec: Optional[str] = None
     reconnect_count: int = 0
     last_packet_ts: Optional[float] = None  # monotonic
+    caption: Optional[str] = None
+    caption_ts: Optional[float] = None  # wall clock (epoch seconds)
+    ttft_ms: Optional[float] = None
+    tpot_ms: Optional[float] = None
+    throughput_tps: Optional[float] = None
 
 
 class StreamManager:
     """Relay a single video source into MediaMTX with PyAV."""
 
-    def __init__(self, stream_id: str, source_url: str):
+    def __init__(
+        self,
+        stream_id: str,
+        source_url: str,
+        vlm_prompt: str = "",
+        alert_event: str = "",
+    ):
         self.stream_id = stream_id
         self.source_url = source_url
+        self.vlm_prompt = str(vlm_prompt or "").strip()
+        self.alert_event = " ".join(str(alert_event or "").strip().split())
         self.target_url = f"{settings.WEBRTC_RELAY_URL.rstrip('/')}/{stream_id}"
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._sample_thread: Optional[threading.Thread] = None
+        self._infer_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self.health = StreamHealth()
+
+        # Latest sampled frame handed from the sampler to the inference worker.
+        self._frame_lock = threading.Lock()
+        self._latest_frame = None  # np.ndarray (H×W×3, RGB) or None
+        self._latest_frame_ts: float = 0.0  # monotonic; 0 = no frame yet
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -73,10 +94,34 @@ class StreamManager:
             self.target_url,
         )
 
+        if settings.VLM_ENABLED and self.vlm_prompt:
+            self._sample_thread = threading.Thread(
+                target=self._sample_loop,
+                daemon=True,
+                name=f"sample-{self.stream_id}",
+            )
+            self._sample_thread.start()
+            self._infer_thread = threading.Thread(
+                target=self._infer_worker,
+                daemon=True,
+                name=f"infer-{self.stream_id}",
+            )
+            self._infer_thread.start()
+            logger.info("Started VLM inference for '%s'", self.stream_id)
+        elif settings.VLM_ENABLED:
+            logger.info(
+                "VLM prompt not set for '%s' — captions disabled until stream is re-added with a prompt",
+                self.stream_id,
+            )
+
     def stop(self) -> None:
         self._running = False
         if self._thread:
             self._thread.join(timeout=5.0)
+        if self._sample_thread:
+            self._sample_thread.join(timeout=5.0)
+        if self._infer_thread:
+            self._infer_thread.join(timeout=5.0)
         with self._lock:
             self.health.publishing = False
         logger.info("Stopped relay '%s'", self.stream_id)
@@ -93,6 +138,11 @@ class StreamManager:
                 codec=self.health.codec,
                 reconnect_count=self.health.reconnect_count,
                 last_packet_ts=self.health.last_packet_ts,
+                caption=self.health.caption,
+                caption_ts=self.health.caption_ts,
+                ttft_ms=self.health.ttft_ms,
+                tpot_ms=self.health.tpot_ms,
+                throughput_tps=self.health.throughput_tps,
             )
 
     # ------------------------------------------------------------------ #
@@ -146,14 +196,37 @@ class StreamManager:
                 backoff = 1.0
                 logger.info("Relay '%s' publishing to MediaMTX", self.stream_id)
 
+                last_dts = None
+                mux_errors = 0
+                backward = 0
                 for packet in input_container.demux(in_stream):
                     if not self._running:
                         break
                     if packet.dts is None:
                         continue  # skip non-timed packets (e.g. header flushes)
 
+                    # Cameras occasionally emit backward/duplicate timestamps.
+                    # The RTSP muxer rejects those with EINVAL, so drop them
+                    # here instead of tearing the whole session down. If the
+                    # clock genuinely reset (many backward in a row), adopt the
+                    # new timeline rather than dropping frames forever.
+                    if last_dts is not None and packet.dts <= last_dts:
+                        backward += 1
+                        if backward <= 10:
+                            continue
+                    backward = 0
+                    last_dts = packet.dts
+
                     packet.stream = out_stream
-                    output_container.mux(packet)
+                    try:
+                        output_container.mux(packet)
+                        mux_errors = 0
+                    except av.error.FFmpegError as exc:
+                        if exc.errno == errno.EINVAL:
+                            mux_errors += 1
+                            if mux_errors <= 30:
+                                continue  # skip the bad packet, keep publishing
+                        raise  # persistent/other error → reconnect
 
                     with self._lock:
                         self.health.last_packet_ts = time.monotonic()
@@ -185,3 +258,119 @@ class StreamManager:
             backoff = min(backoff * 1.5, max_backoff)
 
         logger.info("Relay loop exited for stream '%s'", self.stream_id)
+
+    def _sample_loop(self) -> None:
+        """Continuously drain the source and sample one keyframe per interval.
+
+        Runs on its own connection so the low-latency remux path stays a pure
+        stream-copy. The socket is drained on every iteration (cheap demux, no
+        decode) so it never backs up; only one self-contained keyframe is
+        decoded per ``VLM_INTERVAL`` and handed to the inference worker. This
+        keeps CPU load minimal so the relay thread is never starved.
+        """
+        backoff = 2.0
+        max_backoff = 30.0
+
+        while self._running:
+            container = None
+            try:
+                container = av.open(
+                    self.source_url,
+                    options=self._input_options(),
+                    timeout=settings.RTSP_TIMEOUT,
+                )
+                v_stream = container.streams.video[0]
+                v_stream.thread_type = "NONE"  # decode lone keyframes on demand
+                backoff = 2.0
+                last_sample = 0.0
+
+                for packet in container.demux(v_stream):
+                    if not self._running:
+                        break
+                    if packet.dts is None:
+                        continue
+
+                    now = time.monotonic()
+                    if now - last_sample < settings.VLM_INTERVAL:
+                        continue  # drain cheaply; do not decode
+                    if not packet.is_keyframe:
+                        continue  # wait for a keyframe (self-contained to decode)
+
+                    try:
+                        frames = packet.decode()
+                    except av.error.FFmpegError:
+                        continue
+                    if not frames:
+                        continue
+
+                    last_sample = now
+                    rgb = frames[-1].to_ndarray(format="rgb24")
+                    with self._frame_lock:
+                        self._latest_frame = rgb
+                        self._latest_frame_ts = now
+
+            except av.error.FFmpegError as exc:
+                logger.warning("[%s] VLM sampler error: %s", self.stream_id, exc)
+            except Exception as exc:  # noqa: BLE001 - keep the loop resilient
+                logger.warning("[%s] VLM sampler loop error: %s", self.stream_id, exc)
+            finally:
+                if container is not None:
+                    try:
+                        container.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            if not self._running:
+                break
+            time.sleep(backoff)
+            backoff = min(backoff * 1.5, max_backoff)
+
+        logger.info("Sampler loop exited for stream '%s'", self.stream_id)
+
+    def _infer_worker(self) -> None:
+        """Caption the most recent sampled frame, off the packet-draining path.
+
+        The VLM ``generate`` call blocks for seconds on CPU; running it here
+        instead of inside the sampler keeps the source socket drained the whole
+        time, so inference bursts never stall the relay.
+        """
+        from backend.vlm import get_vlm_engine
+
+        try:
+            engine = get_vlm_engine()
+        except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured
+            logger.error("[%s] VLM disabled: %s", self.stream_id, exc)
+            return
+
+        processed_ts = 0.0
+        while self._running:
+            with self._frame_lock:
+                frame = self._latest_frame
+                frame_ts = self._latest_frame_ts
+
+            if frame is None or frame_ts == processed_ts:
+                time.sleep(0.2)  # nothing new to caption yet
+                continue
+            processed_ts = frame_ts
+
+            try:
+                caption, metrics = engine.caption_with_metrics(frame, prompt=self.vlm_prompt)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[%s] VLM inference error: %s", self.stream_id, exc)
+                continue
+
+            with self._lock:
+                self.health.caption = caption
+                self.health.caption_ts = time.time()
+                ttft_ms = metrics.get("ttft_ms")
+                tpot_ms = metrics.get("tpot_ms")
+                throughput_tps = metrics.get("throughput_tps")
+                if ttft_ms is not None:
+                    self.health.ttft_ms = ttft_ms
+                if tpot_ms is not None:
+                    self.health.tpot_ms = tpot_ms
+                if throughput_tps is not None:
+                    self.health.throughput_tps = throughput_tps
+            logger.debug("[%s] caption: %s", self.stream_id, caption)
+
+        logger.info("Inference worker exited for stream '%s'", self.stream_id)

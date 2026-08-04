@@ -13,6 +13,10 @@ dependencies = [
 
     # RTSP ingestion + remux to MediaMTX (PyAV bundles ffmpeg libraries)
     "av==14.2.0",
+
+    # VLM inference on decoded frames
+    "openvino-genai==2026.2.1.0",
+    "numpy>=2.0,<3.0",
 ]
 
 [tool.uv]

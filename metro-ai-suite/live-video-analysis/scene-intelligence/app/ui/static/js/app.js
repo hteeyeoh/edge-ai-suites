@@ -5,6 +5,7 @@ const statusPill = document.getElementById("status-pill");
 const rtspForm = document.getElementById("rtsp-form");
 const rtspInput = document.getElementById("rtsp-url");
 const streamIdInput = document.getElementById("stream-id");
+const alertEventInput = document.getElementById("alert-event");
 const rtspSubmit = document.getElementById("rtsp-submit");
 const rtspMessage = document.getElementById("rtsp-message");
 const streamsGrid = document.getElementById("streams-grid");
@@ -225,6 +226,18 @@ function createCard(stream) {
     stopButton.type = "button";
     stopButton.textContent = "Stop";
 
+    const actions = document.createElement("div");
+    actions.className = "stream-actions";
+
+    const infoButton = document.createElement("button");
+    infoButton.className = "stream-info-btn";
+    infoButton.type = "button";
+    infoButton.textContent = "i";
+    infoButton.setAttribute("aria-label", "Show alert event details");
+
+    const alertDetails = document.createElement("p");
+    alertDetails.className = "stream-alert-details stream-alert-details--hidden";
+
     const meta = document.createElement("p");
     meta.className = "stream-meta";
 
@@ -238,13 +251,26 @@ function createCard(stream) {
     overlay.className = "stream-overlay";
     overlay.textContent = "Waiting for publisher...";
 
+    const caption = document.createElement("p");
+    caption.className = "stream-caption";
+    caption.textContent = "Awaiting scene description…";
+
+    const vlmMetrics = document.createElement("div");
+    vlmMetrics.className = "stream-vlm-metrics";
+    vlmMetrics.textContent = "TTFT: - ms | TPOT: - ms | Throughput: - tok/s";
+
     frame.appendChild(video);
     frame.appendChild(overlay);
     head.appendChild(idText);
-    head.appendChild(stopButton);
+    actions.appendChild(infoButton);
+    actions.appendChild(stopButton);
+    head.appendChild(actions);
     card.appendChild(head);
     card.appendChild(meta);
+    card.appendChild(alertDetails);
     card.appendChild(frame);
+    card.appendChild(vlmMetrics);
+    card.appendChild(caption);
     streamsGrid.appendChild(card);
 
     const player = {
@@ -253,6 +279,10 @@ function createCard(stream) {
         video,
         overlay,
         meta,
+        alertDetails,
+        infoButton,
+        vlmMetrics,
+        caption,
         stopButton,
         playback: null,
         connecting: false,
@@ -266,13 +296,72 @@ function createCard(stream) {
     stopButton.addEventListener("click", () => {
         stopStream(stream.stream_id, stopButton);
     });
+    infoButton.addEventListener("click", () => {
+        const willShow = player.alertDetails.classList.contains("stream-alert-details--hidden");
+        player.alertDetails.classList.toggle("stream-alert-details--hidden", !willShow);
+        infoButton.classList.toggle("stream-info-btn--active", willShow);
+        infoButton.setAttribute("aria-expanded", String(willShow));
+    });
 
     return player;
+}
+
+function formatAlertEventDetails(stream) {
+    const eventName = (stream.alert_event || "").trim();
+    return eventName
+        ? `Alert Event: ${eventName}`
+        : "Alert Event: not provided";
+}
+
+function isAlertDetected(captionText) {
+    const normalized = String(captionText || "").trim().toLowerCase();
+    if (!normalized) return false;
+    // VLM is configured for binary responses (Yes/No), so treat Yes as alert.
+    return /^yes\b/.test(normalized);
+}
+
+function formatMetricNumber(value, digits = 1) {
+    if (value === null || value === undefined || value === "") return "-";
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "-";
+    return num.toFixed(digits);
+}
+
+function formatVlmMetrics(stream) {
+    const ttft = formatMetricNumber(stream.ttft_ms);
+    const tpot = formatMetricNumber(stream.tpot_ms);
+    const throughput = formatMetricNumber(stream.throughput_tps);
+    return `TTFT: ${ttft} ms | TPOT: ${tpot} ms | Throughput: ${throughput} tok/s`;
 }
 
 function syncPlayerCard(player, stream) {
     player.stream = stream;
     player.meta.textContent = stream.url || "";
+    if (player.alertDetails) {
+        player.alertDetails.textContent = formatAlertEventDetails(stream);
+    }
+    if (player.infoButton) {
+        const hasAlertEvent = Boolean((stream.alert_event || "").trim());
+        player.infoButton.disabled = !hasAlertEvent;
+        player.infoButton.title = hasAlertEvent
+            ? "Show alert event details"
+            : "No alert event details";
+        if (!hasAlertEvent) {
+            player.alertDetails.classList.add("stream-alert-details--hidden");
+            player.infoButton.classList.remove("stream-info-btn--active");
+            player.infoButton.setAttribute("aria-expanded", "false");
+        }
+    }
+    if (player.caption) {
+        player.caption.textContent = stream.caption || "Awaiting scene description…";
+        player.caption.classList.toggle("stream-caption--active", Boolean(stream.caption));
+        const alertDetected = isAlertDetected(stream.caption);
+        player.card.classList.toggle("stream-card--alert", alertDetected);
+        player.caption.classList.toggle("stream-caption--alert", alertDetected);
+    }
+    if (player.vlmMetrics) {
+        player.vlmMetrics.textContent = formatVlmMetrics(stream);
+    }
     if (stream.publishing) {
         if (!player.playback) {
             setCardOverlay(player, "Connecting...", true);
@@ -525,6 +614,11 @@ rtspForm.addEventListener("submit", async (event) => {
         setRtspMessage("Please enter an RTSP URL.", true);
         return;
     }
+    const alertEvent = (alertEventInput?.value || "").trim();
+    if (!alertEvent) {
+        setRtspMessage("Please enter an alert event.", true);
+        return;
+    }
 
     const customId = sanitizeStreamId(streamIdInput.value || "");
     const streamId = customId || nextStreamId();
@@ -536,7 +630,7 @@ rtspForm.addEventListener("submit", async (event) => {
         const addResp = await fetch("/streams", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ stream_id: streamId, url }),
+            body: JSON.stringify({ stream_id: streamId, url, alert_event: alertEvent }),
         });
 
         if (!addResp.ok) {
@@ -550,9 +644,12 @@ rtspForm.addEventListener("submit", async (event) => {
             throw new Error(detail);
         }
 
-        setRtspMessage(`Stream '${streamId}' added. Waiting for publisher...`);
+        setRtspMessage(`Stream '${streamId}' added.`);
         rtspInput.value = "";
         streamIdInput.value = "";
+        if (alertEventInput) {
+            alertEventInput.value = "";
+        }
         await pollHealth();
     } catch (err) {
         const message = err instanceof Error ? err.message : "Failed to add stream.";
