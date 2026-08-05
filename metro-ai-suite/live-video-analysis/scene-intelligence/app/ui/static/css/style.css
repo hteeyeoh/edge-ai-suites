@@ -33,6 +33,87 @@ body {
     border-bottom: 1px solid var(--border);
 }
 
+.settings-menu {
+    margin-left: auto;
+    position: relative;
+}
+
+.settings-toggle {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: #0f141b;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.settings-toggle:hover {
+    border-color: var(--accent);
+    color: #a9ccff;
+}
+
+.settings-toggle svg {
+    width: 1rem;
+    height: 1rem;
+    fill: currentColor;
+}
+
+.settings-panel {
+    position: absolute;
+    top: calc(100% + 0.55rem);
+    right: 0;
+    z-index: 40;
+    width: min(320px, calc(100vw - 2rem));
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.8rem;
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+}
+
+.settings-panel--hidden {
+    display: none;
+}
+
+.settings-panel h2 {
+    margin: 0 0 0.6rem;
+    font-size: 0.86rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.55px;
+}
+
+.settings-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    align-items: center;
+    padding: 0.52rem 0.56rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0f141b;
+    font-size: 0.85rem;
+    margin-bottom: 0.45rem;
+}
+
+.settings-row:last-child {
+    margin-bottom: 0;
+}
+
+.settings-row span {
+    color: var(--muted);
+}
+
+.settings-row strong {
+    color: var(--text);
+    text-align: right;
+    word-break: break-word;
+}
+
 .topbar h1 {
     font-size: 1.1rem;
     margin: 0;
@@ -68,8 +149,9 @@ body {
     grid-template-columns: 320px 1fr;
     gap: 1.25rem;
     padding: 1.25rem;
-    max-width: 1400px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
 }
 
 .left-column {

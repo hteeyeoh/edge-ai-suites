@@ -10,6 +10,10 @@ const rtspSubmit = document.getElementById("rtsp-submit");
 const rtspMessage = document.getElementById("rtsp-message");
 const streamsGrid = document.getElementById("streams-grid");
 const streamsEmpty = document.getElementById("streams-empty");
+const settingsToggle = document.getElementById("settings-toggle");
+const settingsPanel = document.getElementById("settings-panel");
+const settingsVlmModel = document.getElementById("settings-vlm-model");
+const settingsVlmDevice = document.getElementById("settings-vlm-device");
 
 const metricsConnection = document.getElementById("metrics-connection");
 const cpuVal = document.getElementById("cpu-val");
@@ -27,6 +31,51 @@ let metricsReconnectAttempts = 0;
 const metricsMaxReconnectAttempts = 10;
 const metricsHistory = [];
 const metricsHistoryLimit = 60;
+
+function readRuntimeConfigString(key, fallback = "Not configured") {
+    const cfg = window.RUNTIME_CONFIG || {};
+    const value = cfg[key];
+    if (value === null || value === undefined) return fallback;
+    const text = String(value).trim();
+    return text || fallback;
+}
+
+function setSettingsOpen(open) {
+    if (!settingsToggle || !settingsPanel) return;
+    settingsPanel.classList.toggle("settings-panel--hidden", !open);
+    settingsToggle.setAttribute("aria-expanded", String(open));
+}
+
+function initSettingsMenu() {
+    if (!settingsToggle || !settingsPanel) return;
+
+    if (settingsVlmModel) {
+        settingsVlmModel.textContent = readRuntimeConfigString("vlmModel");
+    }
+    if (settingsVlmDevice) {
+        settingsVlmDevice.textContent = readRuntimeConfigString("vlmDevice");
+    }
+
+    settingsToggle.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const willOpen = settingsPanel.classList.contains("settings-panel--hidden");
+        setSettingsOpen(willOpen);
+    });
+
+    settingsPanel.addEventListener("click", (event) => {
+        event.stopPropagation();
+    });
+
+    document.addEventListener("click", () => {
+        setSettingsOpen(false);
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            setSettingsOpen(false);
+        }
+    });
+}
 
 function setStatus(text, kind) {
     statusPill.textContent = text;
@@ -674,6 +723,7 @@ window.addEventListener("beforeunload", () => {
 });
 
 drawMetricsChart();
+initSettingsMenu();
 connectMetricsStream();
 pollHealth();
 setInterval(pollHealth, 2000);

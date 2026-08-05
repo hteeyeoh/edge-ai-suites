@@ -14,6 +14,27 @@
     <header class="topbar">
         <h1>Scene Intelligence</h1>
         <span id="status-pill" class="pill pill--idle">connecting…</span>
+        <div class="settings-menu">
+            <button id="settings-toggle" class="settings-toggle" type="button" aria-label="Open settings"
+                aria-expanded="false" title="Settings">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path
+                        d="M10.88 2.25h2.24l.45 2.05c.43.14.84.32 1.23.53l1.84-1.03 1.58 1.58-1.03 1.84c.21.39.39.8.53 1.23l2.05.45v2.24l-2.05.45c-.14.43-.32.84-.53 1.23l1.03 1.84-1.58 1.58-1.84-1.03c-.39.21-.8.39-1.23.53l-.45 2.05h-2.24l-.45-2.05a7.6 7.6 0 0 1-1.23-.53l-1.84 1.03-1.58-1.58 1.03-1.84a7.6 7.6 0 0 1-.53-1.23l-2.05-.45V9.08l2.05-.45c.14-.43.32-.84.53-1.23L5.8 5.56 7.38 3.98l1.84 1.03c.39-.21.8-.39 1.23-.53l.43-2.23zm1.12 6.1a2.78 2.78 0 1 0 0 5.56 2.78 2.78 0 0 0 0-5.56z" />
+                </svg>
+            </button>
+            <div id="settings-panel" class="settings-panel settings-panel--hidden" role="dialog"
+                aria-label="VLM settings">
+                <h2>Settings</h2>
+                <div class="settings-row">
+                    <span>Vision model</span>
+                    <strong id="settings-vlm-model">-</strong>
+                </div>
+                <div class="settings-row">
+                    <span>Inference Device</span>
+                    <strong id="settings-vlm-device">-</strong>
+                </div>
+            </div>
+        </div>
     </header>
 
     <main class="layout">
@@ -37,8 +58,11 @@
                 <div class="rtsp-form">
                     <label for="alert-event">Alert Event</label>
                     <input id="alert-event" name="alert_event" type="text" inputmode="text" maxlength="120"
-                        placeholder="fire" required />
-                    <p class="form-message">Only one alert event is supported per stream run.</p>
+                        placeholder="Object-type only (e.g., fire, smoke, person)" required />
+                    <p class="form-message">Use one object-type alert only (for example: fire, smoke, person).
+                        Action-type alerts (for example: robbing, carjacking) are not guaranteed to be accurate with
+                        single-frame
+                        inference.</p>
                 </div>
             </section>
 
