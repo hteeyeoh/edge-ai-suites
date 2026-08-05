@@ -58,32 +58,12 @@ All settings are environment variables (see `app/backend/config.py`):
 
 ```bash
 export RTSP_URL="rtsp://user:pass@camera-host:554/stream"
-source ./env.sh          # sets HOST_IP + WebRTC signaling URL
+bash scripts/setup_env.sh
 docker compose up -d --build
 ```
 
 Open http://localhost:9100 to view the live WebRTC stream.
 
-> `source ./env.sh` detects the host LAN IP so browsers on other machines can
-> reach MediaMTX and coturn. Without it, playback works only from `localhost`.
-
-## Run locally (backend only)
-
-MediaMTX and coturn still run in containers; run the app against them:
-
-```bash
-cd app
-uv pip install -r pyproject.toml
-RTSP_URL="rtsp://..." WEBRTC_RELAY_URL="rtsp://localhost:8554" \
-  python -m uvicorn main:app --host 0.0.0.0 --port 9100
-```
-
-## Add a stream at runtime
-
-```bash
-curl -X POST http://localhost:9100/streams \
-  -H "Content-Type: application/json" \
-  -d '{"stream_id": "cam2", "url": "rtsp://..."}'
-```
-
-The browser can then play it via the WHEP path `http://<host>:8889/cam2/whep`.
+> `bash scripts/setup_env.sh` creates `.env` from `.env.example`, detects the
+> host LAN IP, and sets the WebRTC signaling URL so browsers on other machines
+> can reach MediaMTX and coturn. Use `--force` to regenerate `.env`.
