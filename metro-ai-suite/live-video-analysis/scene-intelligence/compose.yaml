@@ -98,8 +98,6 @@ services:
       - PORT=9100
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       # ---- stream source ----
-      - RTSP_URL=${RTSP_URL:-}
-      - RTSP_TRANSPORT=${RTSP_TRANSPORT:-tcp}
       - RTSP_TIMEOUT=${RTSP_TIMEOUT:-15.0}
       # ---- WebRTC rendering ----
       - WEBRTC_AUTO_PUBLISH=${WEBRTC_AUTO_PUBLISH:-true}
@@ -114,6 +112,7 @@ services:
       - VLM_DEVICE=${VLM_DEVICE:-CPU}
       - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
       - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
+      - VLM_FRAME_RESIZE=${VLM_FRAME_RESIZE:-}
       - MAX_STREAMS=${MAX_STREAMS:-8}
     volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>

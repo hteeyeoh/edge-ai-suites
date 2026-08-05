@@ -48,10 +48,6 @@ class StreamRegistry:
             raise KeyError(stream_id)
         manager.stop()
 
-    def get(self, stream_id: str) -> StreamManager | None:
-        with self._lock:
-            return self._streams.get(stream_id)
-
     def ids(self) -> List[str]:
         with self._lock:
             return list(self._streams.keys())

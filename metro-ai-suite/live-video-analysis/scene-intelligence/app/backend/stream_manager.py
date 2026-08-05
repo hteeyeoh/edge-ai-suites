@@ -152,7 +152,7 @@ class StreamManager:
     def _input_options(self) -> dict:
         if str(self.source_url).startswith(("rtsp://", "rtsps://")):
             return {
-                "rtsp_transport": settings.RTSP_TRANSPORT,
+                "rtsp_transport": "tcp",
                 "fflags": "nobuffer",
                 "flags": "low_delay",
             }
@@ -352,6 +352,7 @@ class StreamManager:
                 time.sleep(0.2)  # nothing new to caption yet
                 continue
             processed_ts = frame_ts
+            frame = self._maybe_resize_frame_for_vlm(frame)
 
             try:
                 caption, metrics = engine.caption_with_metrics(frame, prompt=self.vlm_prompt)
@@ -374,3 +375,33 @@ class StreamManager:
             logger.debug("[%s] caption: %s", self.stream_id, caption)
 
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
+
+    def _maybe_resize_frame_for_vlm(self, frame):
+        target = settings.VLM_FRAME_RESIZE
+        if target is None:
+            return frame
+
+        target_w, target_h = target
+        src_h = getattr(frame, "shape", (0, 0))[0]
+        src_w = getattr(frame, "shape", (0, 0))[1]
+        if src_w == target_w and src_h == target_h:
+            return frame
+
+        try:
+            resized = (
+                av.VideoFrame.from_ndarray(frame, format="rgb24")
+                .reformat(width=target_w, height=target_h, format="rgb24")
+                .to_ndarray(format="rgb24")
+            )
+            return resized
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[%s] VLM frame resize %sx%s -> %sx%s failed; using original frame (%s)",
+                self.stream_id,
+                src_w,
+                src_h,
+                target_w,
+                target_h,
+                exc,
+            )
+            return frame

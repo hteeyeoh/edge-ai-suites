@@ -253,7 +253,7 @@ function createCard(stream) {
 
     const caption = document.createElement("p");
     caption.className = "stream-caption";
-    caption.textContent = "Awaiting scene description…";
+    caption.textContent = "Awaiting incoming alert...";
 
     const vlmMetrics = document.createElement("div");
     vlmMetrics.className = "stream-vlm-metrics";
@@ -353,7 +353,7 @@ function syncPlayerCard(player, stream) {
         }
     }
     if (player.caption) {
-        player.caption.textContent = stream.caption || "Awaiting scene description…";
+        player.caption.textContent = stream.caption || "Awaiting incoming alert...";
         player.caption.classList.toggle("stream-caption--active", Boolean(stream.caption));
         const alertDetected = isAlertDetected(stream.caption);
         player.card.classList.toggle("stream-card--alert", alertDetected);
@@ -617,6 +617,10 @@ rtspForm.addEventListener("submit", async (event) => {
     const alertEvent = (alertEventInput?.value || "").trim();
     if (!alertEvent) {
         setRtspMessage("Please enter an alert event.", true);
+        return;
+    }
+    if (/[,;|/]/.test(alertEvent)) {
+        setRtspMessage("Only one alert event is supported per stream.", true);
         return;
     }
 

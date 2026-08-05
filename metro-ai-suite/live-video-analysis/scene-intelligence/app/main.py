@@ -36,13 +36,7 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Scene Intelligence | port=%s", settings.PORT)
-    if settings.RTSP_URL:
-        try:
-            registry.add("default", settings.RTSP_URL)
-        except ValueError as exc:
-            logger.error("Failed to register default stream: %s", exc)
-    else:
-        logger.warning("RTSP_URL not set — add a stream via POST /streams")
+    logger.info("No startup stream auto-registration — add streams via UI or POST /streams")
     try:
         yield
     finally:

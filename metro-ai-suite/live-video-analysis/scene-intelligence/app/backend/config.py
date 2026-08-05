@@ -5,6 +5,7 @@
 
 import logging
 import os
+import re
 
 
 def _int(key: str, default: int) -> int:
@@ -28,18 +29,38 @@ def _bool(key: str, default: bool) -> bool:
     return val.strip().lower() in ("1", "true", "yes")
 
 
+def _frame_size(key: str) -> tuple[int, int] | None:
+    raw = os.getenv(key, "").strip()
+    if not raw:
+        return None
+
+    match = re.fullmatch(r"(\d+)\s*[xX,]\s*(\d+)", raw)
+    if not match:
+        logging.getLogger(__name__).warning(
+            "Invalid %s='%s'; expected WIDTHxHEIGHT (for example 640x360)",
+            key,
+            raw,
+        )
+        return None
+
+    width = int(match.group(1))
+    height = int(match.group(2))
+    if width <= 0 or height <= 0:
+        logging.getLogger(__name__).warning(
+            "Invalid %s='%s'; width/height must be positive integers",
+            key,
+            raw,
+        )
+        return None
+    return (width, height)
+
+
 class Settings:
     # ---- server ----
     PORT: int = _int("PORT", 9100)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # ---- stream source ----
-    # Primary RTSP (or file/http) source rendered under stream id "default".
-    RTSP_URL: str = os.getenv("RTSP_URL", "")
-
-    # Transport for RTSP sources: "tcp" (robust) or "udp" (lower latency).
-    RTSP_TRANSPORT: str = os.getenv("RTSP_TRANSPORT", "tcp")
-
     # Socket open/read timeout in seconds for PyAV.
     RTSP_TIMEOUT: float = _float("RTSP_TIMEOUT", 15.0)
 
@@ -76,12 +97,19 @@ class Settings:
     # Alert prompt template used to construct the final VLM prompt from a
     # user-provided alert event (e.g. "fire", "accident").
     ALERT_PROMPT_TEMPLATE: str = (
-        'Is there {event} happened/detected? Answer only with "Yes" or "No".'
+        "Task: Determine whether the event {event} is present in this image. "
+        'Use only visual evidence from this single frame. '
+        'If the event is clearly present, reply "Yes". Otherwise, reply "No". '
+        'Output exactly one word: "Yes" or "No".'
     )
 
     # Seconds between inferences per stream and the token budget per caption.
     VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
     VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 100)
+
+    # Optional pre-inference frame resize for VLM input. Leave empty to keep
+    # original sampled frame size. Format: WIDTHxHEIGHT (for example 640x360).
+    VLM_FRAME_RESIZE: tuple[int, int] | None = _frame_size("VLM_FRAME_RESIZE")
 
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
@@ -95,6 +123,9 @@ def build_alert_prompt(alert_event: str) -> str:
     event_text = " ".join(str(alert_event or "").strip().split())
     if not event_text:
         raise ValueError("'alert_event' must not be empty")
+    if re.search(r"[,;|/]", event_text):
+        raise ValueError("Only one alert event is supported per stream")
+
     return settings.ALERT_PROMPT_TEMPLATE.format(event=event_text)
 
 

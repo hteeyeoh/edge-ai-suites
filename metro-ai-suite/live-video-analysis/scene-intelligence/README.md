@@ -45,8 +45,6 @@ All settings are environment variables (see `app/backend/config.py`):
 | Variable               | Default                 | Description                                        |
 | ---------------------- | ----------------------- | -------------------------------------------------- |
 | `PORT`                 | `9100`                  | App HTTP port                                      |
-| `RTSP_URL`             | *(none)*                | Primary source registered as `default`             |
-| `RTSP_TRANSPORT`       | `tcp`                   | RTSP transport (`tcp` or `udp`)                    |
 | `RTSP_TIMEOUT`         | `15.0`                  | PyAV open/read timeout (seconds)                   |
 | `WEBRTC_AUTO_PUBLISH`  | `true`                  | Relay each source into MediaMTX                    |
 | `WEBRTC_RELAY_URL`     | `rtsp://mediamtx:8554`  | MediaMTX RTSP base the relay publishes to          |
@@ -57,12 +55,12 @@ All settings are environment variables (see `app/backend/config.py`):
 ## Run with Docker Compose
 
 ```bash
-export RTSP_URL="rtsp://user:pass@camera-host:554/stream"
 bash scripts/setup_env.sh
 docker compose up -d --build
 ```
 
-Open http://localhost:9100 to view the live WebRTC stream.
+Open http://localhost:9100, then add a stream URL from the UI
+(or call `POST /streams` with `{ "url": "rtsp://...", "stream_id": "default" }`).
 
 > `bash scripts/setup_env.sh` creates `.env` from `.env.example`, detects the
 > host LAN IP, and sets the WebRTC signaling URL so browsers on other machines
