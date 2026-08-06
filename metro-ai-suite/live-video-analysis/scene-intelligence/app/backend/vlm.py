@@ -56,7 +56,21 @@ class VLMEngine:
             settings.VLM_DEVICE,
             self._model_path,
         )
-        self._pipe = ov_genai.VLMPipeline(self._model_path, settings.VLM_DEVICE)
+        pipeline_config = None
+        if str(settings.VLM_DEVICE).upper() == "NPU":
+            pipeline_config = {
+                "MAX_PROMPT_LEN": settings.NPU_MAX_PROMPT_LEN,
+                "MIN_RESPONSE_LEN": settings.NPU_MIN_RESPONSE_LEN,
+            }
+
+        if pipeline_config is None:
+            self._pipe = ov_genai.VLMPipeline(self._model_path, settings.VLM_DEVICE)
+        else:
+            self._pipe = ov_genai.VLMPipeline(
+                self._model_path,
+                settings.VLM_DEVICE,
+                **pipeline_config,
+            )
         self._gen_config = ov_genai.GenerationConfig()
         self._gen_config.max_new_tokens = settings.VLM_MAX_TOKENS
         logger.info("VLM pipeline ready")

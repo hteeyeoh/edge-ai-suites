@@ -121,7 +121,7 @@ services:
     # Harmless for CPU inference; requires the host Intel compute runtime.
     devices:
       - "/dev/dri:/dev/dri"
-      - "/dev/accel:/dev/accel"
+      - "${NPU_DEVICE_PATH:-/dev/null}:${NPU_DEVICE_PATH:-/dev/null}"
     group_add:
       - "${RENDER_GROUP_ID:-992}"
     healthcheck:

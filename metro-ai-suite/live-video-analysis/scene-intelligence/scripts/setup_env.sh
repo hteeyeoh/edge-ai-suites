@@ -62,6 +62,12 @@ WEBRTC_SIGNALING_URL="http://${HOST_IP}:${WEBRTC_SIGNALING_PORT}"
 RENDER_GROUP_ID="$(getent group render 2>/dev/null | cut -d: -f3)"
 RENDER_GROUP_ID="${RENDER_GROUP_ID:-992}"
 
+HAS_NPU_DEVICE=false
+if [[ -e /dev/accel ]]; then
+  HAS_NPU_DEVICE=true
+  NPU_DEVICE_PATH="/dev/accel"
+fi
+
 tmp_file="$(mktemp)"
 trap 'rm -f "${tmp_file}"' EXIT
 
@@ -76,11 +82,20 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     RENDER_GROUP_ID=*)
       printf 'RENDER_GROUP_ID=%s\n' "${RENDER_GROUP_ID}" >> "${tmp_file}"
       ;;
+    NPU_DEVICE_PATH=*)
+      if [[ "${HAS_NPU_DEVICE}" == "true" ]]; then
+        printf 'NPU_DEVICE_PATH=%s\n' "${NPU_DEVICE_PATH}" >> "${tmp_file}"
+      fi
+      ;;
     *)
       printf '%s\n' "$line" >> "${tmp_file}"
       ;;
   esac
 done < "${ENV_EXAMPLE}"
+
+if [[ "${HAS_NPU_DEVICE}" == "true" ]] && ! grep -q '^NPU_DEVICE_PATH=' "${tmp_file}"; then
+  printf 'NPU_DEVICE_PATH=%s\n' "${NPU_DEVICE_PATH}" >> "${tmp_file}"
+fi
 
 mv "${tmp_file}" "${ENV_FILE}"
 trap - EXIT
@@ -89,4 +104,7 @@ echo "Created ${ENV_FILE}"
 echo "HOST_IP=${HOST_IP}"
 echo "WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL}"
 echo "RENDER_GROUP_ID=${RENDER_GROUP_ID}"
+if [[ "${HAS_NPU_DEVICE}" == "true" ]]; then
+  echo "NPU device detected. NPU_DEVICE_PATH=${NPU_DEVICE_PATH}"
+fi
 echo "UI URL: http://${HOST_IP}:9100"
