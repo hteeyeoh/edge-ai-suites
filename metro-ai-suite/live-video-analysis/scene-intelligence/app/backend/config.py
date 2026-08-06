@@ -107,6 +107,10 @@ class Settings:
     VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
     VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 100)
 
+    # VLM NPU-specific configuration. Only used when VLM_DEVICE=NPU.
+    NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 4096)
+    NPU_MIN_RESPONSE_LEN = _int("NPU_MIN_RESPONSE_LEN", 512)
+
     # Optional pre-inference frame resize for VLM input. Leave empty to keep
     # original sampled frame size. Format: WIDTHxHEIGHT (for example 640x360).
     VLM_FRAME_RESIZE: tuple[int, int] | None = _frame_size("VLM_FRAME_RESIZE")
