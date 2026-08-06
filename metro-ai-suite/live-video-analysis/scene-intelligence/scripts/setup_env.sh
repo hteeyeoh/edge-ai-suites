@@ -15,7 +15,7 @@ usage() {
 Usage: bash scripts/setup_env.sh [--force]
 
 Creates ${ENV_FILE} from .env.example and fills host-specific values such as
-HOST_IP, WEBRTC_SIGNALING_URL, and RENDER_GROUP_ID.
+HOST_IP, WEBRTC_SIGNALING_URL, HOST_UID, HOST_GID, and RENDER_GROUP_ID.
 
 Options:
   --force     Overwrite an existing .env file.
@@ -59,6 +59,9 @@ WEBRTC_SIGNALING_PORT="$(awk -F= '$1 == "WEBRTC_SIGNALING_PORT" {print $2; exit}
 WEBRTC_SIGNALING_PORT="${WEBRTC_SIGNALING_PORT:-8889}"
 WEBRTC_SIGNALING_URL="http://${HOST_IP}:${WEBRTC_SIGNALING_PORT}"
 
+HOST_UID="$(id -u)"
+HOST_GID="$(id -g)"
+
 RENDER_GROUP_ID="$(getent group render 2>/dev/null | cut -d: -f3)"
 RENDER_GROUP_ID="${RENDER_GROUP_ID:-992}"
 
@@ -72,6 +75,12 @@ while IFS= read -r line || [[ -n "$line" ]]; do
       ;;
     WEBRTC_SIGNALING_URL=*)
       printf 'WEBRTC_SIGNALING_URL=%s\n' "${WEBRTC_SIGNALING_URL}" >> "${tmp_file}"
+      ;;
+    HOST_UID=*)
+      printf 'HOST_UID=%s\n' "${HOST_UID}" >> "${tmp_file}"
+      ;;
+    HOST_GID=*)
+      printf 'HOST_GID=%s\n' "${HOST_GID}" >> "${tmp_file}"
       ;;
     RENDER_GROUP_ID=*)
       printf 'RENDER_GROUP_ID=%s\n' "${RENDER_GROUP_ID}" >> "${tmp_file}"
@@ -88,5 +97,7 @@ trap - EXIT
 echo "Created ${ENV_FILE}"
 echo "HOST_IP=${HOST_IP}"
 echo "WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL}"
+echo "HOST_UID=${HOST_UID}"
+echo "HOST_GID=${HOST_GID}"
 echo "RENDER_GROUP_ID=${RENDER_GROUP_ID}"
 echo "UI URL: http://${HOST_IP}:9100"

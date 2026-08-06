@@ -81,18 +81,19 @@ class Settings:
     # Metrics-manager SSE port used by the UI device-usage panel.
     METRICS_SERVICE_PORT: int = _int("METRICS_SERVICE_PORT", 9090)
 
-    # ---- VLM inference (OpenVINO GenAI) ----
-    # When true, each stream decodes sampled frames and captions them with the
-    # OpenVINO GenAI VLM pipeline.
+    # ---- VLM inference (OVMS chat/completions) ----
+    # When true, each stream decodes sampled frames and captions them through
+    # the OVMS OpenAI-compatible chat/completions endpoint.
     VLM_ENABLED: bool = _bool("VLM_ENABLED", True)
 
-    # Root of the mounted model tree. Models are organised per device as
-    # <VLM_MODELS_DIR>/<device>/<VLM_MODEL>, e.g. /models/cpu/InternVL2-1B.
-    VLM_MODELS_DIR: str = os.getenv("VLM_MODELS_DIR", "/models")
-    VLM_MODEL: str = os.getenv("VLM_MODEL", "InternVL2-1B")
+    # Inference device hint (used by deployment and compatibility logic).
+    VLM_DEVICE: str = os.getenv("OVMS_TARGET_DEVICE", "CPU")
 
-    # Inference device: CPU, GPU or NPU (selects the matching model subfolder).
-    VLM_DEVICE: str = os.getenv("VLM_DEVICE", "CPU")
+    # OVMS OpenAI-compatible endpoint configuration.
+    VLM_OVMS_BASE_URL: str = os.getenv("VLM_OVMS_BASE_URL", "http://ovms-vlm:8000")
+    VLM_OVMS_CHAT_PATH: str = os.getenv("VLM_OVMS_CHAT_PATH", "/v3/chat/completions")
+    VLM_OVMS_MODEL: str = os.getenv("VLM_OVMS_MODEL", os.getenv("OVMS_SOURCE_MODEL", "OpenVINO/InternVL2-1B"))
+    VLM_OVMS_TIMEOUT: float = _float("VLM_OVMS_TIMEOUT", 60.0)
 
     # Alert prompt template used to construct the final VLM prompt from a
     # user-provided alert event (e.g. "fire", "accident").

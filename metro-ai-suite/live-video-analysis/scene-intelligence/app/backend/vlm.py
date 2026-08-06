@@ -1,24 +1,23 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""OpenVINO GenAI vision-language captioning engine.
+"""OVMS-backed vision-language captioning engine.
 
-A single :class:`VLMEngine` wraps one ``openvino_genai.VLMPipeline``. The model
-is heavy and not safe to call concurrently, so :meth:`caption` serialises every
-request behind a lock — multiple stream workers share one loaded pipeline.
-
-The model tree is laid out per device as
-``<VLM_MODELS_DIR>/<device>/<VLM_MODEL>`` (e.g. ``/models/cpu/InternVL2-1B``),
-matching how the models are mounted into the container.
+This module sends sampled frames to OVMS via the OpenAI-compatible
+``/v3/chat/completions`` endpoint. Calls are serialized with a lock because
+multiple stream workers share one client instance.
 """
 
 from __future__ import annotations
 
 import logging
-import os
+import base64
+import json
 import re
 import threading
 import time
+import urllib.error
+import urllib.request
 from typing import Any, Optional
 
 import numpy as np
@@ -29,51 +28,79 @@ logger = logging.getLogger(__name__)
 
 
 class VLMEngine:
-    """Thread-safe wrapper around an OpenVINO GenAI VLM pipeline."""
+    """Thread-safe wrapper around OVMS chat/completions."""
 
     def __init__(self) -> None:
-        self._pipe = None
-        self._gen_config = None
         self._lock = threading.Lock()
-        self._model_path = os.path.join(
-            settings.VLM_MODELS_DIR,
-            settings.VLM_DEVICE.lower(),
-            settings.VLM_MODEL,
-        )
+        base_url = settings.VLM_OVMS_BASE_URL.rstrip("/")
+        chat_path = settings.VLM_OVMS_CHAT_PATH
+        if not str(chat_path).startswith("/"):
+            chat_path = f"/{chat_path}"
+        self._endpoint = f"{base_url}{chat_path}"
+        self._model_name = settings.VLM_OVMS_MODEL
+        self._timeout_s = max(1.0, float(settings.VLM_OVMS_TIMEOUT))
         self._load()
         self._metrics_debug_logged = False
 
     def _load(self) -> None:
-        # Imported lazily so the app still starts if GenAI is unavailable.
-        import openvino_genai as ov_genai
-
-        if not os.path.isdir(self._model_path):
-            raise FileNotFoundError(f"VLM model not found at '{self._model_path}'")
-
         logger.info(
-            "Loading VLM '%s' on %s from %s",
-            settings.VLM_MODEL,
-            settings.VLM_DEVICE,
-            self._model_path,
+            "Initializing OVMS VLM client | endpoint=%s | model=%s",
+            self._endpoint,
+            self._model_name,
         )
-        pipeline_config = None
-        if str(settings.VLM_DEVICE).upper() == "NPU":
-            pipeline_config = {
-                "MAX_PROMPT_LEN": settings.NPU_MAX_PROMPT_LEN,
-                "MIN_RESPONSE_LEN": settings.NPU_MIN_RESPONSE_LEN,
-            }
 
-        if pipeline_config is None:
-            self._pipe = ov_genai.VLMPipeline(self._model_path, settings.VLM_DEVICE)
-        else:
-            self._pipe = ov_genai.VLMPipeline(
-                self._model_path,
-                settings.VLM_DEVICE,
-                **pipeline_config,
-            )
-        self._gen_config = ov_genai.GenerationConfig()
-        self._gen_config.max_new_tokens = settings.VLM_MAX_TOKENS
-        logger.info("VLM pipeline ready")
+    @staticmethod
+    def _frame_to_data_url(rgb_frame: np.ndarray) -> str:
+        """Encode RGB uint8 frame into a PPM data URL (no extra deps required)."""
+        if rgb_frame is None:
+            raise ValueError("rgb_frame is required")
+        if not hasattr(rgb_frame, "shape") or len(rgb_frame.shape) != 3:
+            raise ValueError("rgb_frame must be HxWx3")
+        if rgb_frame.shape[2] != 3:
+            raise ValueError("rgb_frame must have 3 channels (RGB)")
+
+        if rgb_frame.dtype != np.uint8:
+            rgb_frame = np.clip(rgb_frame, 0, 255).astype(np.uint8)
+
+        h, w, _ = rgb_frame.shape
+        contiguous = np.ascontiguousarray(rgb_frame)
+        header = f"P6\n{w} {h}\n255\n".encode("ascii")
+        ppm_bytes = header + contiguous.tobytes(order="C")
+        encoded = base64.b64encode(ppm_bytes).decode("ascii")
+        return f"data:image/x-portable-pixmap;base64,{encoded}"
+
+    @staticmethod
+    def _extract_completion_text(payload: dict[str, Any]) -> str:
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            choice0 = choices[0] if isinstance(choices[0], dict) else {}
+            message = choice0.get("message") if isinstance(choice0, dict) else None
+            content = message.get("content") if isinstance(message, dict) else None
+
+            if isinstance(content, str):
+                return content.strip()
+
+            if isinstance(content, list):
+                text_parts: list[str] = []
+                for item in content:
+                    if isinstance(item, str):
+                        text_parts.append(item)
+                        continue
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "text" and isinstance(item.get("text"), str):
+                        text_parts.append(item["text"])
+                joined = "\n".join(p.strip() for p in text_parts if p and p.strip())
+                if joined:
+                    return joined
+
+        # Fallbacks for variant schemas.
+        for key in ("output_text", "text", "response"):
+            val = payload.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+
+        return ""
 
     @staticmethod
     def _as_float(value: Any) -> Optional[float]:
@@ -318,42 +345,6 @@ class VLMEngine:
         return None
 
     @classmethod
-    def _extract_perf_metrics_from_pipe(cls, pipe: Any) -> dict[str, Optional[float]]:
-        if pipe is None:
-            return cls._empty_metrics()
-
-        metrics_obj = None
-        for method_name in (
-            "get_perf_metrics",
-            "get_performance_metrics",
-            "get_generation_metrics",
-            "get_metrics",
-        ):
-            if not hasattr(pipe, method_name):
-                continue
-            method = getattr(pipe, method_name)
-            if not callable(method):
-                continue
-            try:
-                metrics_obj = method()
-            except Exception:  # noqa: BLE001 - API differs across versions/devices
-                metrics_obj = None
-            if metrics_obj is not None:
-                break
-
-        if metrics_obj is None:
-            return cls._empty_metrics()
-
-        return cls._extract_perf_metrics(metrics_obj)
-
-    @staticmethod
-    def _debug_attr_names(obj: Any, limit: int = 80) -> list[str]:
-        try:
-            names = [n for n in dir(obj) if not str(n).startswith("_")]
-        except Exception:  # noqa: BLE001
-            return []
-        return names[:limit]
-
     @classmethod
     def _extract_perf_metrics(cls, result: Any) -> dict[str, Optional[float]]:
         # Try direct result object, then common nested containers.
@@ -434,42 +425,90 @@ class VLMEngine:
             "throughput_tps": throughput_tps,
         }
 
+    def _send_chat_completion(self, rgb_frame: np.ndarray, prompt_text: str) -> dict[str, Any]:
+        image_data_url = self._frame_to_data_url(rgb_frame)
+        payload = {
+            "model": self._model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ],
+                }
+            ],
+            "max_tokens": settings.VLM_MAX_TOKENS,
+        }
+
+        body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self._endpoint,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout_s) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            error_text = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"OVMS HTTP {exc.code} calling {self._endpoint}: {error_text[:600]}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"OVMS request failed for {self._endpoint}: {exc}") from exc
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"OVMS returned non-JSON response: {raw[:600]}") from exc
+
+        if not isinstance(parsed, dict):
+            raise RuntimeError("OVMS response payload must be a JSON object")
+        return parsed
+
     def caption_with_metrics(
         self,
         rgb_frame: np.ndarray,
         prompt: Optional[str] = None,
     ) -> tuple[str, dict[str, Optional[float]]]:
         """Return caption text and optional latency/throughput metrics."""
-        import openvino as ov
-
         prompt_text = (prompt or "").strip()
         if not prompt_text:
             raise ValueError("prompt is required")
 
-        # GenAI expects a batched NHWC uint8 tensor.
-        tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
         with self._lock:
             t0 = time.perf_counter()
-            result = self._pipe.generate(
-                prompt_text,
-                images=[tensor],
-                generation_config=self._gen_config,
-            )
+            result = self._send_chat_completion(rgb_frame, prompt_text)
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
             metrics = self._extract_perf_metrics(result)
-            if self._metrics_unavailable(metrics):
-                metrics = self._extract_perf_metrics_from_pipe(self._pipe)
+            caption_text = self._extract_completion_text(result)
+            if not caption_text:
+                raise RuntimeError("OVMS response did not include completion text")
 
             if not self._metrics_debug_logged and self._metrics_unavailable(metrics):
                 self._metrics_debug_logged = True
-                logger.warning(
-                    "VLM metrics unavailable from current runtime API | result_attrs=%s | pipe_attrs=%s",
-                    self._debug_attr_names(result),
-                    self._debug_attr_names(self._pipe),
-                )
+                logger.warning("VLM metrics unavailable from OVMS response; using fallback estimates")
 
-            caption_text = self._extract_caption_text(result)
+            usage = result.get("usage") if isinstance(result, dict) else None
+            completion_tokens = None
+            if isinstance(usage, dict):
+                completion_tokens_raw = usage.get("completion_tokens")
+                try:
+                    completion_tokens = int(completion_tokens_raw)
+                except (TypeError, ValueError):
+                    completion_tokens = None
+
+            if metrics.get("tpot_ms") is None and completion_tokens and completion_tokens > 0:
+                metrics["tpot_ms"] = elapsed_ms / completion_tokens
+            if metrics.get("throughput_tps") is None and metrics.get("tpot_ms"):
+                tpot = metrics["tpot_ms"]
+                if tpot and tpot > 0:
+                    metrics["throughput_tps"] = 1000.0 / tpot
+
             metrics = self._fill_fallback_metrics(metrics, elapsed_ms, caption_text)
 
         return caption_text, metrics

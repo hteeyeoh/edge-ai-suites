@@ -4,6 +4,36 @@
 name: ${PROJECT_NAME:-scene-intelligence}
 
 services:
+  ovms-vlm:
+    image: openvino/model_server:latest-gpu
+    container_name: ovms-vlm
+    restart: unless-stopped
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    environment:
+      - no_proxy=localhost,127.0.0.1,ovms-vlm,scene-intelligence,${no_proxy:-}
+      - NO_PROXY=localhost,127.0.0.1,ovms-vlm,scene-intelligence,${NO_PROXY:-}
+      - http_proxy=${http_proxy:-}
+      - https_proxy=${https_proxy:-}
+      - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN:-}
+    ports:
+      - "${OVMS_REST_PORT:-8000}:8000"
+    volumes:
+      - "./models:/models:rw"
+    devices:
+      - "/dev/dri:/dev/dri"
+      - "/dev/accel:/dev/accel"
+    group_add:
+      - "${RENDER_GROUP_ID:-992}"
+    command: >-
+      --rest_port 8000
+      --model_repository_path /models
+      --source_model ${OVMS_SOURCE_MODEL:-OpenVINO/InternVL2-1B-fp16-ov}
+      --task text_generation
+      --target_device ${OVMS_TARGET_DEVICE:-NPU}
+      --plugin_config '{"DEVICE_PROPERTIES":{"NPU":{"MAX_PROMPT_LEN":2048}}}'
+    networks:
+      - app_network
+
   mediamtx:
     image: bluenviron/mediamtx:1.15.6
     container_name: mediamtx
@@ -90,8 +120,8 @@ services:
       - "${PORT:-9100}:9100"
     environment:
       # ---- proxy ----
-      - no_proxy=${no_proxy:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager
-      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager
+      - no_proxy=${no_proxy:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager,ovms-vlm
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1},mediamtx,coturn,metrics-manager,ovms-vlm
       - http_proxy=${http_proxy:-}
       - https_proxy=${https_proxy:-}
       # ---- server ----
@@ -105,18 +135,19 @@ services:
       - WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL:-}
       - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
       - METRICS_SERVICE_PORT=${METRICS_SERVICE_PORT:-9090}
-      # ---- VLM inference (OpenVINO GenAI) ----
+      # ---- VLM inference (OVMS chat/completions) ----
       - VLM_ENABLED=${VLM_ENABLED:-true}
-      - VLM_MODELS_DIR=/models
-      - VLM_MODEL=${VLM_MODEL:-InternVL2-1B}
-      - VLM_DEVICE=${VLM_DEVICE:-CPU}
+      - VLM_OVMS_BASE_URL=http://ovms-vlm:${OVMS_REST_PORT:-8000}
+      - VLM_OVMS_CHAT_PATH=${VLM_OVMS_CHAT_PATH:-/v3/chat/completions}
+      - VLM_OVMS_MODEL=${VLM_OVMS_MODEL:-${OVMS_SOURCE_MODEL:-OpenVINO/InternVL2-1B-fp16-ov}}
+      - VLM_DEVICE=${OVMS_TARGET_DEVICE:-CPU}
       - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
       - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
       - VLM_FRAME_RESIZE=${VLM_FRAME_RESIZE:-}
       - MAX_STREAMS=${MAX_STREAMS:-8}
-    volumes:
+    # volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
-      - "./ov_models:/models:ro"
+      # - "./ov_models:/models:ro"
     # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
     # Harmless for CPU inference; requires the host Intel compute runtime.
     devices:
@@ -135,6 +166,8 @@ services:
         condition: service_started
       metrics-manager:
         condition: service_healthy
+      ovms-vlm:
+        condition: service_started
     networks:
       - app_network
 

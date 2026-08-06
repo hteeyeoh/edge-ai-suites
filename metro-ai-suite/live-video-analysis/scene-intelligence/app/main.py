@@ -90,7 +90,7 @@ async def runtime_config():
         "webrtcSignalingUrl": settings.WEBRTC_SIGNALING_URL,
         "webrtcSignalingPort": settings.WEBRTC_SIGNALING_PORT,
         "metricsServicePort": settings.METRICS_SERVICE_PORT,
-        "vlmModel": settings.VLM_MODEL,
+        "vlmModel": settings.VLM_OVMS_MODEL,
         "vlmDevice": settings.VLM_DEVICE,
     }
     body = f"window.RUNTIME_CONFIG = {json.dumps(payload)};"
