@@ -114,6 +114,39 @@ class Settings:
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
 
+    # Testing limits: cap segments written / VLM inferences per stream so a
+    # looping test RTSP source doesn't run (and write to disk) indefinitely.
+    # 0 = unlimited.
+    MAX_SEGMENTS: int = _int("MAX_SEGMENTS", 20)
+    VLM_MAX_INFERENCES: int = _int("VLM_MAX_INFERENCES", 20)
+
+    # ---- Segment cleanup (reclaim disk space once a segment is no longer needed) ----
+    # Always retain this many of the most-recently finalized segments per
+    # stream, regardless of VLM verdict/TTL, so a downstream deep analyzer
+    # (M4) has time to pick them up before they're reclaimed.
+    SEGMENT_RETENTION_GRACE: int = _int("SEGMENT_RETENTION_GRACE", 2)
+
+    # Fallback for streams with no alert_event (no Yes/No verdict available):
+    # reclaim a finalized segment once it's this many seconds old. 0 disables.
+    SEGMENT_TTL_SECONDS: float = _float("SEGMENT_TTL_SECONDS", 300.0)
+
+    # Hard backstop: max finalized segments retained on disk per stream,
+    # regardless of verdict/TTL (evicts oldest first). 0 disables the cap.
+    SEGMENT_MAX_ON_DISK: int = _int("SEGMENT_MAX_ON_DISK", 50)
+
+    # ---- Segment writer + frame metadata registry (for deep-analysis handoff) ----
+    # Directory where rolling .mp4 segments are written, per stream.
+    SEGMENT_OUTPUT_DIR: str = os.getenv("SEGMENT_OUTPUT_DIR", "segments")
+
+    # Length of each rolling segment file, in seconds.
+    SEGMENT_TIME_SECONDS: int = _int("SEGMENT_TIME_SECONDS", 15)
+
+    # Frames per second registered into the metadata registry, per stream.
+    FRAME_SAMPLE_FPS: int = _int("FRAME_SAMPLE_FPS", 1)
+
+    # Max frame metadata records kept in memory before oldest are evicted.
+    FRAME_REGISTRY_MAX_RECORDS: int = _int("FRAME_REGISTRY_MAX_RECORDS", 3000)
+
 
 settings = Settings()
 

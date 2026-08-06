@@ -114,14 +114,31 @@ services:
       - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
       - VLM_FRAME_RESIZE=${VLM_FRAME_RESIZE:-}
       - MAX_STREAMS=${MAX_STREAMS:-8}
+      # ---- Testing limits (0 = unlimited) ----
+      - MAX_SEGMENTS=${MAX_SEGMENTS:-20}
+      - VLM_MAX_INFERENCES=${VLM_MAX_INFERENCES:-20}
+      # ---- Segment writer + frame metadata registry ----
+      - SEGMENT_OUTPUT_DIR=${SEGMENT_OUTPUT_DIR:-segments}
+      - SEGMENT_TIME_SECONDS=${SEGMENT_TIME_SECONDS:-15}
+      - FRAME_SAMPLE_FPS=${FRAME_SAMPLE_FPS:-1}
+      - FRAME_REGISTRY_MAX_RECORDS=${FRAME_REGISTRY_MAX_RECORDS:-3000}
+      # ---- Segment cleanup ----
+      - SEGMENT_RETENTION_GRACE=${SEGMENT_RETENTION_GRACE:-2}
+      - SEGMENT_TTL_SECONDS=${SEGMENT_TTL_SECONDS:-300.0}
+      - SEGMENT_MAX_ON_DISK=${SEGMENT_MAX_ON_DISK:-50}
     volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
       - "./ov_models:/models:ro"
+      # Rolling .mp4 segments written by the frame registry. Bind-mounted to a
+      # disk-backed host directory (not tmpfs) so segments persist across
+      # container restarts and remain visible to a future external M4
+      # deep-analysis process reading the same host path.
+      - "${HOST_SEGMENTS_DIR:-./segments}:/app/segments"
     # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
     # Harmless for CPU inference; requires the host Intel compute runtime.
     devices:
       - "/dev/dri:/dev/dri"
-      - "/dev/accel:/dev/accel"
+      - "${NPU_DEVICE_PATH:-/dev/null}:${NPU_DEVICE_PATH:-/dev/null}"
     group_add:
       - "${RENDER_GROUP_ID:-992}"
     healthcheck:

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -22,13 +23,15 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import build_alert_prompt, settings, setup_logging
+from backend.frame_registry import SegmentFrameRegistry
 from backend.registry import StreamRegistry
 
 setup_logging()
 logger = logging.getLogger(__name__)
 
 _startup_time = time.monotonic()
-registry = StreamRegistry()
+frame_registry = SegmentFrameRegistry(max_records=settings.FRAME_REGISTRY_MAX_RECORDS)
+registry = StreamRegistry(frame_registry)
 
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
@@ -162,6 +165,52 @@ async def delete_stream(stream_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Stream '{stream_id}' not found")
     return {"status": "removed", "stream_id": stream_id}
+
+
+# ---------------------------------------------------------------------------
+# Frame metadata registry (segment handoff for deep analysis)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/registry/stats", tags=["Registry"])
+async def registry_stats():
+    return frame_registry.stats()
+
+
+@app.get("/registry/stream/{stream_id}", tags=["Registry"])
+async def registry_stream(stream_id: str, limit: int = 50):
+    records = frame_registry.latest(stream_id, limit)
+    return {
+        "records": [
+            {
+                "frame_id": str(r.frame_id),
+                "stream_id": r.stream_id,
+                "segment_path": r.segment_path,
+                "pts_seconds": r.pts_seconds,
+                "created_ts": r.created_ts,
+            }
+            for r in records
+        ]
+    }
+
+
+@app.get("/registry/frame/{frame_id}", tags=["Registry"])
+async def registry_frame(frame_id: str):
+    try:
+        parsed_id = uuid.UUID(frame_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="'frame_id' must be a valid UUID")
+    record = frame_registry.get_record(parsed_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="frame_id not found")
+    return {
+        "frame_id": str(record.frame_id),
+        "stream_id": record.stream_id,
+        "rtsp_url": record.rtsp_url,
+        "segment_path": record.segment_path,
+        "pts_seconds": record.pts_seconds,
+        "created_ts": record.created_ts,
+    }
 
 
 # ---------------------------------------------------------------------------

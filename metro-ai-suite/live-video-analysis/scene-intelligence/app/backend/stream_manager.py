@@ -9,8 +9,8 @@ into MediaMTX over RTSP. MediaMTX then serves the stream to the browser over
 WebRTC (WHEP), giving low-latency playback without decoding on the backend.
 
 Because this path is a pure remux, it leaves the compressed frames untouched;
-a later step can add a PyAV decode branch off the same source for VLM
-inference.
+a second connection (see ``_segment_and_register_loop``) decodes the same
+source for segment writing, frame registration, and VLM inference handoff.
 """
 
 from __future__ import annotations
@@ -19,12 +19,15 @@ import errno
 import logging
 import threading
 import time
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 import av
 
 from backend.config import settings
+from backend.frame_registry import FrameRecord, SegmentFrameRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +57,7 @@ class StreamManager:
         source_url: str,
         vlm_prompt: str = "",
         alert_event: str = "",
+        frame_registry: Optional[SegmentFrameRegistry] = None,
     ):
         self.stream_id = stream_id
         self.source_url = source_url
@@ -63,15 +67,30 @@ class StreamManager:
 
         self._running = False
         self._thread: Optional[threading.Thread] = None
-        self._sample_thread: Optional[threading.Thread] = None
         self._infer_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self.health = StreamHealth()
 
-        # Latest sampled frame handed from the sampler to the inference worker.
+        # Latest sampled frame handed from the segment loop to the inference worker.
         self._frame_lock = threading.Lock()
         self._latest_frame = None  # np.ndarray (H×W×3, RGB) or None
         self._latest_frame_ts: float = 0.0  # monotonic; 0 = no frame yet
+        self._latest_frame_id: Optional[uuid.UUID] = None  # ties back to the registered FrameRecord
+
+        # Segment writer + frame metadata registry (deep-analysis handoff).
+        self.frame_registry = frame_registry
+        self._segment_thread: Optional[threading.Thread] = None
+        self._segment_output_pattern = str(
+            Path(settings.SEGMENT_OUTPUT_DIR) / f"{stream_id}_segment_%04d.mp4"
+        )
+
+        # Segment cleanup bookkeeping. ``_segment_verdicts`` is written by the
+        # inference thread and read/cleared by the segment thread, so it needs
+        # its own lock; ``_finalized_segments`` is only ever touched by the
+        # segment thread.
+        self._segment_lock = threading.Lock()
+        self._segment_verdicts: dict[str, bool] = {}  # segment_path -> positive VLM verdict seen
+        self._finalized_segments: list[tuple[str, float]] = []  # (path, finalized_ts); verdict looked up lazily
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -95,12 +114,6 @@ class StreamManager:
         )
 
         if settings.VLM_ENABLED and self.vlm_prompt:
-            self._sample_thread = threading.Thread(
-                target=self._sample_loop,
-                daemon=True,
-                name=f"sample-{self.stream_id}",
-            )
-            self._sample_thread.start()
             self._infer_thread = threading.Thread(
                 target=self._infer_worker,
                 daemon=True,
@@ -114,14 +127,24 @@ class StreamManager:
                 self.stream_id,
             )
 
+        if self.frame_registry is not None:
+            Path(settings.SEGMENT_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+            self._segment_thread = threading.Thread(
+                target=self._segment_and_register_loop,
+                daemon=True,
+                name=f"segment-{self.stream_id}",
+            )
+            self._segment_thread.start()
+            logger.info("Started segment writer for '%s'", self.stream_id)
+
     def stop(self) -> None:
         self._running = False
         if self._thread:
             self._thread.join(timeout=5.0)
-        if self._sample_thread:
-            self._sample_thread.join(timeout=5.0)
         if self._infer_thread:
             self._infer_thread.join(timeout=5.0)
+        if self._segment_thread:
+            self._segment_thread.join(timeout=5.0)
         with self._lock:
             self.health.publishing = False
         logger.info("Stopped relay '%s'", self.stream_id)
@@ -259,74 +282,6 @@ class StreamManager:
 
         logger.info("Relay loop exited for stream '%s'", self.stream_id)
 
-    def _sample_loop(self) -> None:
-        """Continuously drain the source and sample one keyframe per interval.
-
-        Runs on its own connection so the low-latency remux path stays a pure
-        stream-copy. The socket is drained on every iteration (cheap demux, no
-        decode) so it never backs up; only one self-contained keyframe is
-        decoded per ``VLM_INTERVAL`` and handed to the inference worker. This
-        keeps CPU load minimal so the relay thread is never starved.
-        """
-        backoff = 2.0
-        max_backoff = 30.0
-
-        while self._running:
-            container = None
-            try:
-                container = av.open(
-                    self.source_url,
-                    options=self._input_options(),
-                    timeout=settings.RTSP_TIMEOUT,
-                )
-                v_stream = container.streams.video[0]
-                v_stream.thread_type = "NONE"  # decode lone keyframes on demand
-                backoff = 2.0
-                last_sample = 0.0
-
-                for packet in container.demux(v_stream):
-                    if not self._running:
-                        break
-                    if packet.dts is None:
-                        continue
-
-                    now = time.monotonic()
-                    if now - last_sample < settings.VLM_INTERVAL:
-                        continue  # drain cheaply; do not decode
-                    if not packet.is_keyframe:
-                        continue  # wait for a keyframe (self-contained to decode)
-
-                    try:
-                        frames = packet.decode()
-                    except av.error.FFmpegError:
-                        continue
-                    if not frames:
-                        continue
-
-                    last_sample = now
-                    rgb = frames[-1].to_ndarray(format="rgb24")
-                    with self._frame_lock:
-                        self._latest_frame = rgb
-                        self._latest_frame_ts = now
-
-            except av.error.FFmpegError as exc:
-                logger.warning("[%s] VLM sampler error: %s", self.stream_id, exc)
-            except Exception as exc:  # noqa: BLE001 - keep the loop resilient
-                logger.warning("[%s] VLM sampler loop error: %s", self.stream_id, exc)
-            finally:
-                if container is not None:
-                    try:
-                        container.close()
-                    except Exception:  # noqa: BLE001
-                        pass
-
-            if not self._running:
-                break
-            time.sleep(backoff)
-            backoff = min(backoff * 1.5, max_backoff)
-
-        logger.info("Sampler loop exited for stream '%s'", self.stream_id)
-
     def _infer_worker(self) -> None:
         """Caption the most recent sampled frame, off the packet-draining path.
 
@@ -343,22 +298,30 @@ class StreamManager:
             return
 
         processed_ts = 0.0
+        inference_count = 0
         while self._running:
             with self._frame_lock:
                 frame = self._latest_frame
                 frame_ts = self._latest_frame_ts
+                frame_id = self._latest_frame_id
 
             if frame is None or frame_ts == processed_ts:
                 time.sleep(0.2)  # nothing new to caption yet
                 continue
             processed_ts = frame_ts
             frame = self._maybe_resize_frame_for_vlm(frame)
+            logger.info("[%s] VLM inferencing on frame_id=%s", self.stream_id, frame_id)
 
             try:
                 caption, metrics = engine.caption_with_metrics(frame, prompt=self.vlm_prompt)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[%s] VLM inference error: %s", self.stream_id, exc)
                 continue
+
+            logger.info("[%s] VLM inference done for frame_id=%s: %s", self.stream_id, frame_id, caption)
+
+            if self.alert_event and frame_id is not None:
+                self._record_segment_verdict(frame_id, caption)
 
             with self._lock:
                 self.health.caption = caption
@@ -374,9 +337,31 @@ class StreamManager:
                     self.health.throughput_tps = throughput_tps
             logger.debug("[%s] caption: %s", self.stream_id, caption)
 
+            inference_count += 1
+            if settings.VLM_MAX_INFERENCES and inference_count >= settings.VLM_MAX_INFERENCES:
+                logger.info(
+                    "[%s] VLM_MAX_INFERENCES=%d reached; inference worker stopping (relay/segments unaffected)",
+                    self.stream_id,
+                    settings.VLM_MAX_INFERENCES,
+                )
+                break
+
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
 
+    def _record_segment_verdict(self, frame_id: uuid.UUID, caption: str) -> None:
+        """Tag a segment 'positive' if any VLM sample within it answered Yes; sticky once positive."""
+        record = self.frame_registry.get_record(frame_id) if self.frame_registry else None
+        if record is None:
+            return
+        is_positive = caption.strip().lower().startswith("yes")
+        with self._segment_lock:
+            if is_positive:
+                self._segment_verdicts[record.segment_path] = True
+            else:
+                self._segment_verdicts.setdefault(record.segment_path, False)
+
     def _maybe_resize_frame_for_vlm(self, frame):
+        """Resize a sampled RGB frame to ``VLM_FRAME_RESIZE`` before captioning, if configured."""
         target = settings.VLM_FRAME_RESIZE
         if target is None:
             return frame
@@ -405,3 +390,260 @@ class StreamManager:
                 exc,
             )
             return frame
+
+    def _segment_and_register_loop(self) -> None:
+        """Sample the source once per stream: register + segment, then hand off to VLM.
+
+        Runs on its own connection, independent of the relay, so a slow or
+        stalled writer never affects playback. Per decoded frame the flow is:
+        get the frame from RTSP -> register its metadata and mux it into the
+        rolling segment -> at the (lower) ``VLM_INTERVAL`` cadence, hand that
+        same frame to the inference worker via ``self._latest_frame``. Only
+        frame metadata (frame_id, segment_path, pts) is kept in memory via
+        ``self.frame_registry`` — no frame images are persisted to disk; a deep
+        analyzer resolves ``frame_id`` back to ``segment_path`` on demand.
+        """
+        assert self.frame_registry is not None
+
+        vlm_active = settings.VLM_ENABLED and bool(self.vlm_prompt)
+        last_vlm_sample = 0.0
+
+        segments_written = 0
+        last_segment_idx = -1
+        last_segment_path: Optional[str] = None
+        segment_limit_reached = False
+
+        backoff = 2.0
+        max_backoff = 20.0
+
+        while self._running and not segment_limit_reached:
+            input_container = None
+            output_container = None
+            try:
+                input_container = av.open(
+                    self.source_url,
+                    options=self._input_options(),
+                    timeout=settings.RTSP_TIMEOUT,
+                )
+                in_stream = input_container.streams.video[0]
+                in_stream.thread_type = "AUTO"
+
+                new_width, new_height = _calculate_scaled_dimensions(
+                    in_stream.width, in_stream.height, 720
+                )
+
+                output_container = av.open(
+                    self._segment_output_pattern,
+                    mode="w",
+                    format="stream_segment",
+                    options={"segment_time": str(settings.SEGMENT_TIME_SECONDS)},
+                )
+                out_stream = output_container.add_stream(
+                    "libx264", rate=in_stream.average_rate
+                )
+                out_stream.width = new_width
+                out_stream.height = new_height
+                out_stream.pix_fmt = "yuv420p"
+                out_stream.thread_type = "AUTO"
+
+                reformatter = av.video.reformatter.VideoReformatter()
+
+                avg_fps = float(in_stream.average_rate)
+                sample_every = max(1, int(avg_fps / settings.FRAME_SAMPLE_FPS))
+                backoff = 2.0
+                frame_count = 0
+
+                for packet in input_container.demux(in_stream):
+                    if not self._running or segment_limit_reached:
+                        break
+
+                    for frame in packet.decode():
+                        frame_count += 1
+
+                        if frame.width != new_width or frame.height != new_height:
+                            frame = reformatter.reformat(
+                                frame, width=new_width, height=new_height
+                            )
+
+                        pts_seconds = (
+                            float(frame.pts * in_stream.time_base)
+                            if frame.pts is not None
+                            else frame_count / avg_fps
+                        )
+                        segment_idx = int(pts_seconds / settings.SEGMENT_TIME_SECONDS)
+                        segment_path = self._segment_output_pattern.replace(
+                            "%04d", f"{segment_idx:04d}"
+                        )
+
+                        if segment_idx != last_segment_idx:
+                            if last_segment_path is not None:
+                                self._finalize_segment(last_segment_path)
+                            last_segment_idx = segment_idx
+                            last_segment_path = segment_path
+                            segments_written += 1
+                            if settings.MAX_SEGMENTS and segments_written > settings.MAX_SEGMENTS:
+                                segment_limit_reached = True
+                                logger.info(
+                                    "[%s] MAX_SEGMENTS=%d reached; segment writer stopping (relay/VLM unaffected)",
+                                    self.stream_id,
+                                    settings.MAX_SEGMENTS,
+                                )
+                                break
+
+                        if frame_count % sample_every == 0:
+                            frame_id = uuid.uuid4()
+                            self.frame_registry.register(
+                                FrameRecord(
+                                    frame_id=frame_id,
+                                    stream_id=self.stream_id,
+                                    rtsp_url=self.source_url,
+                                    segment_path=segment_path,
+                                    pts_seconds=pts_seconds,
+                                )
+                            )
+                            logger.info(
+                                "[%s] registered frame_id=%s segment=%s pts=%.2fs",
+                                self.stream_id,
+                                frame_id,
+                                segment_path,
+                                pts_seconds,
+                            )
+
+                            if vlm_active:
+                                now = time.monotonic()
+                                if now - last_vlm_sample >= settings.VLM_INTERVAL:
+                                    last_vlm_sample = now
+                                    rgb = frame.to_ndarray(format="rgb24")
+                                    with self._frame_lock:
+                                        self._latest_frame = rgb
+                                        self._latest_frame_ts = now
+                                        self._latest_frame_id = frame_id
+                                    logger.info(
+                                        "[%s] handed frame_id=%s to VLM inference worker",
+                                        self.stream_id,
+                                        frame_id,
+                                    )
+
+                        for enc_packet in out_stream.encode(frame):
+                            output_container.mux(enc_packet)
+
+                for enc_packet in out_stream.encode(None):
+                    output_container.mux(enc_packet)
+
+            except av.error.FFmpegError as exc:
+                logger.warning("[%s] segment writer error: %s", self.stream_id, exc)
+            except Exception as exc:  # noqa: BLE001 - keep the loop resilient
+                logger.warning("[%s] segment writer loop error: %s", self.stream_id, exc)
+            finally:
+                for container in (output_container, input_container):
+                    if container is not None:
+                        try:
+                            container.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+
+            if not self._running or segment_limit_reached:
+                break
+            time.sleep(backoff)
+            backoff = min(backoff * 1.5, max_backoff)
+
+        logger.info("Segment writer loop exited for stream '%s'", self.stream_id)
+
+    def _finalize_segment(self, segment_path: str) -> None:
+        """Track a just-rotated-out segment; its verdict is looked up lazily, not frozen here.
+
+        VLM inference is asynchronous and can still be in flight for the last
+        sampled frame of this segment, so we deliberately don't consult
+        ``_segment_verdicts`` yet — that happens in ``_sweep_segments`` only
+        once the segment ages past the retention grace window, giving any
+        in-flight caption time to land first.
+        """
+        self._finalized_segments.append((segment_path, time.monotonic()))
+        self._sweep_segments()
+
+    def _sweep_segments(self) -> None:
+        """Reclaim finalized segments outside the retention grace window.
+
+        Segments with no positive VLM verdict (alert streams) or past their
+        TTL (non-alert streams) are deleted along with their registry
+        entries; the most recent ``SEGMENT_RETENTION_GRACE`` segments are
+        always exempt, and ``SEGMENT_MAX_ON_DISK`` is a hard backstop applied
+        afterwards regardless of verdict.
+        """
+        alert_mode = bool(self.alert_event)
+        grace = max(0, settings.SEGMENT_RETENTION_GRACE)
+        eligible_count = max(0, len(self._finalized_segments) - grace)
+
+        kept: list[tuple[str, float]] = []
+        for index, (segment_path, finalized_ts) in enumerate(self._finalized_segments):
+            if index >= eligible_count:
+                kept.append((segment_path, finalized_ts))  # within the grace window
+                continue
+
+            if alert_mode:
+                # Any positive sample recorded for this segment (even one that
+                # landed after finalize, as long as it's within the grace
+                # window) is enough to keep it — sticky-positive is enforced
+                # in _record_segment_verdict.
+                with self._segment_lock:
+                    positive = self._segment_verdicts.pop(segment_path, False)
+                reclaim = not positive
+                reason = "negative-verdict"
+            else:
+                reclaim = (
+                    settings.SEGMENT_TTL_SECONDS > 0
+                    and time.monotonic() - finalized_ts >= settings.SEGMENT_TTL_SECONDS
+                )
+                reason = "ttl"
+
+            if reclaim:
+                self._delete_segment(segment_path, reason)
+            else:
+                kept.append((segment_path, finalized_ts))
+
+        if settings.SEGMENT_MAX_ON_DISK:
+            while len(kept) > settings.SEGMENT_MAX_ON_DISK:
+                segment_path, _finalized_ts = kept.pop(0)
+                with self._segment_lock:
+                    self._segment_verdicts.pop(segment_path, None)
+                self._delete_segment(segment_path, "disk-cap")
+
+        self._finalized_segments = kept
+
+    def _delete_segment(self, segment_path: str, reason: str) -> None:
+        try:
+            Path(segment_path).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("[%s] failed to delete segment %s: %s", self.stream_id, segment_path, exc)
+            return
+        removed = self.frame_registry.remove_segment(self.stream_id, segment_path)
+        logger.info(
+            "[%s] reclaimed segment=%s reason=%s (removed %d registry entries)",
+            self.stream_id,
+            segment_path,
+            reason,
+            removed,
+        )
+
+
+def _calculate_scaled_dimensions(
+    width: int, height: int, max_dimension: int = 720
+) -> tuple[int, int]:
+    """Scale down to max_dimension on the longer side, preserving aspect ratio.
+
+    Both dimensions are forced even, as required by libx264.
+    """
+    aspect_ratio = width / height
+
+    if width <= max_dimension and height <= max_dimension:
+        new_width, new_height = width, height
+    elif width > height:
+        new_width = max_dimension
+        new_height = int(new_width / aspect_ratio)
+    else:
+        new_height = max_dimension
+        new_width = int(new_height * aspect_ratio)
+
+    new_width = new_width if new_width % 2 == 0 else new_width - 1
+    new_height = new_height if new_height % 2 == 0 else new_height - 1
+    return new_width, new_height

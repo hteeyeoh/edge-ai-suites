@@ -62,6 +62,10 @@ WEBRTC_SIGNALING_URL="http://${HOST_IP}:${WEBRTC_SIGNALING_PORT}"
 RENDER_GROUP_ID="$(getent group render 2>/dev/null | cut -d: -f3)"
 RENDER_GROUP_ID="${RENDER_GROUP_ID:-992}"
 
+HOST_SEGMENTS_DIR="$(awk -F= '$1 == "HOST_SEGMENTS_DIR" {print $2; exit}' "${ENV_EXAMPLE}")"
+HOST_SEGMENTS_DIR="${HOST_SEGMENTS_DIR:-/dev/shm/scene-intelligence-segments}"
+mkdir -p "${HOST_SEGMENTS_DIR}"
+
 tmp_file="$(mktemp)"
 trap 'rm -f "${tmp_file}"' EXIT
 
@@ -89,4 +93,5 @@ echo "Created ${ENV_FILE}"
 echo "HOST_IP=${HOST_IP}"
 echo "WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL}"
 echo "RENDER_GROUP_ID=${RENDER_GROUP_ID}"
+echo "HOST_SEGMENTS_DIR=${HOST_SEGMENTS_DIR}"
 echo "UI URL: http://${HOST_IP}:9100"
