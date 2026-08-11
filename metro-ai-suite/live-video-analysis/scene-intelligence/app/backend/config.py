@@ -98,9 +98,8 @@ class Settings:
     # user-provided alert event (e.g. "fire", "accident").
     ALERT_PROMPT_TEMPLATE: str = (
         "Task: Determine whether the event {event} is present in this image. "
-        'Use only visual evidence from this single frame. '
-        'If the event is clearly present, reply "Yes". Otherwise, reply "No". '
-        'Output exactly one word: "Yes" or "No".'
+        "Use only visual evidence from this single frame. "
+        "Return a strict JSON object that matches the provided schema."
     )
 
     # Seconds between inferences per stream and the token budget per caption.
@@ -123,7 +122,7 @@ settings = Settings()
 
 
 def build_alert_prompt(alert_event: str) -> str:
-    """Build a binary-response VLM prompt from a user-provided alert event."""
+    """Build a structured-output VLM prompt from a user-provided alert event."""
     event_text = " ".join(str(alert_event or "").strip().split())
     if not event_text:
         raise ValueError("'alert_event' must not be empty")

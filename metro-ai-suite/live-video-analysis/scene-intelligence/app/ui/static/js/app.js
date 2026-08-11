@@ -362,11 +362,38 @@ function formatAlertEventDetails(stream) {
         : "Alert Event: not provided";
 }
 
-function isAlertDetected(captionText) {
-    const normalized = String(captionText || "").trim().toLowerCase();
+function normalizeAlerts(stream) {
+    if (!stream || !Array.isArray(stream.alerts)) return [];
+    return stream.alerts
+        .filter((item) => item && typeof item === "object")
+        .map((item) => ({
+            event: String(item.event || "").trim(),
+            triggered: Boolean(item.triggered),
+        }));
+}
+
+function isAlertDetected(stream) {
+    const alerts = normalizeAlerts(stream);
+    if (alerts.length > 0) {
+        return alerts.some((item) => item.triggered);
+    }
+
+    const normalized = String(stream?.caption || "").trim().toLowerCase();
     if (!normalized) return false;
-    // VLM is configured for binary responses (Yes/No), so treat Yes as alert.
-    return /^yes\b/.test(normalized);
+    return /^yes\b/.test(normalized) || /:\s*yes\b/.test(normalized);
+}
+
+function formatAlertCaption(stream) {
+    const alerts = normalizeAlerts(stream);
+    if (alerts.length > 0) {
+        return alerts
+            .map((item) => {
+                const eventName = item.event || "event";
+                return `${eventName}: ${item.triggered ? "Yes" : "No"}`;
+            })
+            .join(" | ");
+    }
+    return stream.caption || "Awaiting incoming alert...";
 }
 
 function formatMetricNumber(value, digits = 1) {
@@ -402,9 +429,10 @@ function syncPlayerCard(player, stream) {
         }
     }
     if (player.caption) {
-        player.caption.textContent = stream.caption || "Awaiting incoming alert...";
-        player.caption.classList.toggle("stream-caption--active", Boolean(stream.caption));
-        const alertDetected = isAlertDetected(stream.caption);
+        const captionText = formatAlertCaption(stream);
+        player.caption.textContent = captionText;
+        player.caption.classList.toggle("stream-caption--active", Boolean(captionText));
+        const alertDetected = isAlertDetected(stream);
         player.card.classList.toggle("stream-card--alert", alertDetected);
         player.caption.classList.toggle("stream-caption--alert", alertDetected);
     }

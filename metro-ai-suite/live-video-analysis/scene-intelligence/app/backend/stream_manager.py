@@ -19,8 +19,8 @@ import errno
 import logging
 import threading
 import time
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import av
 
@@ -39,6 +39,7 @@ class StreamHealth:
     reconnect_count: int = 0
     last_packet_ts: Optional[float] = None  # monotonic
     caption: Optional[str] = None
+    alerts: list[dict[str, Any]] = field(default_factory=list)
     caption_ts: Optional[float] = None  # wall clock (epoch seconds)
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
@@ -139,6 +140,7 @@ class StreamManager:
                 reconnect_count=self.health.reconnect_count,
                 last_packet_ts=self.health.last_packet_ts,
                 caption=self.health.caption,
+                alerts=[dict(item) for item in self.health.alerts],
                 caption_ts=self.health.caption_ts,
                 ttft_ms=self.health.ttft_ms,
                 tpot_ms=self.health.tpot_ms,
@@ -355,13 +357,25 @@ class StreamManager:
             frame = self._maybe_resize_frame_for_vlm(frame)
 
             try:
-                caption, metrics = engine.caption_with_metrics(frame, prompt=self.vlm_prompt)
+                alert_payload, metrics = engine.infer_alert_with_metrics(
+                    frame,
+                    prompt=self.vlm_prompt,
+                    alert_event=self.alert_event,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[%s] VLM inference error: %s", self.stream_id, exc)
                 continue
 
+            alerts = alert_payload.get("alerts") if isinstance(alert_payload, dict) else []
+            first_alert = alerts[0] if isinstance(alerts, list) and alerts else {}
+            event_name = str(first_alert.get("event") or self.alert_event).strip() or self.alert_event
+            triggered = bool(first_alert.get("triggered"))
+            caption = f"{event_name}: {'Yes' if triggered else 'No'}"
+            logger.info("[%s] structured_alert_response=%s", self.stream_id, alert_payload)
+
             with self._lock:
                 self.health.caption = caption
+                self.health.alerts = alerts if isinstance(alerts, list) else []
                 self.health.caption_ts = time.time()
                 ttft_ms = metrics.get("ttft_ms")
                 tpot_ms = metrics.get("tpot_ms")

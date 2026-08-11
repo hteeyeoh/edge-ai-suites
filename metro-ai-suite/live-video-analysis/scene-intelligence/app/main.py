@@ -118,6 +118,7 @@ async def list_streams():
                 "reconnect_count": h.reconnect_count,
                 "whep_path": f"/{manager.stream_id}/whep",
                 "caption": h.caption,
+                "alerts": h.alerts,
                 "caption_ts": h.caption_ts,
                 "ttft_ms": h.ttft_ms,
                 "tpot_ms": h.tpot_ms,

@@ -14,6 +14,7 @@ matching how the models are mounted into the container.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -113,6 +114,99 @@ class VLMEngine:
         if isinstance(texts, (list, tuple)) and texts:
             return str(texts[0]).strip()
         return str(result).strip()
+
+    @staticmethod
+    def _is_truthy_text(value: str) -> bool:
+        normalized = str(value or "").strip().lower()
+        return normalized in {"1", "true", "yes", "y", "detected", "present"}
+
+    @classmethod
+    def _fallback_alert_payload(cls, raw_text: str, alert_event: str) -> dict[str, Any]:
+        text = str(raw_text or "").strip()
+        lowered = text.lower()
+        triggered = False
+        if cls._is_truthy_text(text):
+            triggered = True
+        elif re.search(r"\b(yes|true|present|detected)\b", lowered):
+            triggered = True
+        elif re.search(r"\b(no|false|absent|not\s+present|not\s+detected)\b", lowered):
+            triggered = False
+
+        return {
+            "alerts": [
+                {
+                    "event": str(alert_event or "").strip(),
+                    "triggered": bool(triggered),
+                }
+            ]
+        }
+
+    @staticmethod
+    def _alert_json_schema(alert_event: str) -> dict[str, Any]:
+        event_text = str(alert_event or "").strip()
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "alerts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "event": {
+                                "type": "string",
+                                "enum": [event_text],
+                            },
+                            "triggered": {
+                                "type": "boolean",
+                            },
+                        },
+                        "required": ["event", "triggered"],
+                    },
+                }
+            },
+            "required": ["alerts"],
+        }
+
+    @classmethod
+    def _normalize_alert_payload(cls, payload: Any, alert_event: str) -> dict[str, Any]:
+        event_text = str(alert_event or "").strip()
+        if not isinstance(payload, dict):
+            return cls._fallback_alert_payload(str(payload), event_text)
+
+        alerts = payload.get("alerts")
+        if not isinstance(alerts, list) or not alerts:
+            maybe_triggered = payload.get("triggered")
+            if isinstance(maybe_triggered, bool):
+                return {
+                    "alerts": [
+                        {
+                            "event": event_text,
+                            "triggered": maybe_triggered,
+                        }
+                    ]
+                }
+            return cls._fallback_alert_payload(json.dumps(payload), event_text)
+
+        first = alerts[0]
+        if not isinstance(first, dict):
+            return cls._fallback_alert_payload(json.dumps(payload), event_text)
+
+        raw_event = str(first.get("event") or "").strip() or event_text
+        raw_triggered = first.get("triggered")
+        triggered = raw_triggered if isinstance(raw_triggered, bool) else cls._is_truthy_text(str(raw_triggered))
+
+        return {
+            "alerts": [
+                {
+                    "event": raw_event,
+                    "triggered": bool(triggered),
+                }
+            ]
+        }
 
     @staticmethod
     def _estimate_token_count(text: str) -> int:
@@ -473,6 +567,59 @@ class VLMEngine:
             metrics = self._fill_fallback_metrics(metrics, elapsed_ms, caption_text)
 
         return caption_text, metrics
+
+    def infer_alert_with_metrics(
+        self,
+        rgb_frame: np.ndarray,
+        prompt: Optional[str],
+        alert_event: str,
+    ) -> tuple[dict[str, Any], dict[str, Optional[float]]]:
+        """Return a structured alert payload and optional latency/throughput metrics."""
+        import openvino as ov
+        import openvino_genai as ov_genai
+
+        prompt_text = (prompt or "").strip()
+        event_text = str(alert_event or "").strip()
+        if not prompt_text:
+            raise ValueError("prompt is required")
+        if not event_text:
+            raise ValueError("alert_event is required")
+
+        schema = self._alert_json_schema(event_text)
+
+        # Use a dedicated deterministic config for schema-constrained JSON generation.
+        gen_config = ov_genai.GenerationConfig()
+        gen_config.max_new_tokens = settings.VLM_MAX_TOKENS
+        gen_config.do_sample = False
+        gen_config.structured_output_config = ov_genai.StructuredOutputConfig(
+            json_schema=json.dumps(schema)
+        )
+
+        # GenAI expects a batched NHWC uint8 tensor.
+        tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
+        with self._lock:
+            t0 = time.perf_counter()
+            result = self._pipe.generate(
+                prompt_text,
+                images=[tensor],
+                generation_config=gen_config,
+            )
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+            metrics = self._extract_perf_metrics(result)
+            if self._metrics_unavailable(metrics):
+                metrics = self._extract_perf_metrics_from_pipe(self._pipe)
+
+            raw_text = self._extract_caption_text(result)
+            try:
+                payload = json.loads(raw_text)
+            except json.JSONDecodeError:
+                payload = self._fallback_alert_payload(raw_text, event_text)
+
+            normalized = self._normalize_alert_payload(payload, event_text)
+            metrics = self._fill_fallback_metrics(metrics, elapsed_ms, raw_text)
+
+        return normalized, metrics
 
     def caption(self, rgb_frame: np.ndarray, prompt: Optional[str] = None) -> str:
         """Return a caption for one RGB frame (H×W×3, uint8)."""
