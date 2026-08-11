@@ -114,6 +114,16 @@ class Settings:
     # original sampled frame size. Format: WIDTHxHEIGHT (for example 640x360).
     VLM_FRAME_RESIZE: tuple[int, int] | None = _frame_size("VLM_FRAME_RESIZE")
 
+    # Alert state machine tuning.
+    # A stream transitions OFF->ON only after this many consecutive positives,
+    # and ON->OFF only after this many consecutive negatives.
+    VLM_ALERT_ON_STREAK: int = max(1, _int("VLM_ALERT_ON_STREAK", 1))
+    VLM_ALERT_OFF_STREAK: int = max(1, _int("VLM_ALERT_OFF_STREAK", 1))
+
+    # Optional cooldown before emitting another OFF->ON raise after a previous
+    # raise. State still tracks ON/OFF immediately; this gates re-raise events.
+    VLM_ALERT_REARM_SEC: float = max(0.0, _float("VLM_ALERT_REARM_SEC", 0.0))
+
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
 

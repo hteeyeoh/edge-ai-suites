@@ -74,6 +74,13 @@ class StreamManager:
         self._latest_frame = None  # np.ndarray (H×W×3, RGB) or None
         self._latest_frame_ts: float = 0.0  # monotonic; 0 = no frame yet
 
+        # Alert state machine: debounce repeated detections and only raise
+        # transitions (OFF->ON / ON->OFF), not every inference tick.
+        self._alert_is_on = False
+        self._positive_streak = 0
+        self._negative_streak = 0
+        self._last_raise_ts = float("-inf")
+
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
@@ -369,14 +376,24 @@ class StreamManager:
             alerts = alert_payload.get("alerts") if isinstance(alert_payload, dict) else []
             first_alert = alerts[0] if isinstance(alerts, list) and alerts else {}
             event_name = str(first_alert.get("event") or self.alert_event).strip() or self.alert_event
-            triggered = bool(first_alert.get("triggered"))
-            caption = f"{event_name}: {'Yes' if triggered else 'No'}"
+            model_triggered = bool(first_alert.get("triggered"))
+            state_on, state_changed, raised_now = self._advance_alert_state(
+                model_triggered,
+                time.monotonic(),
+            )
+            caption = f"{event_name}: {'Yes' if state_on else 'No'}"
             logger.info("[%s] structured_alert_response=%s", self.stream_id, alert_payload)
+            if raised_now:
+                logger.info("[%s] alert transition OFF->ON for event '%s'", self.stream_id, event_name)
+            elif state_changed:
+                logger.info("[%s] alert transition ON->OFF for event '%s'", self.stream_id, event_name)
 
             with self._lock:
                 self.health.caption = caption
-                self.health.alerts = alerts if isinstance(alerts, list) else []
-                self.health.caption_ts = time.time()
+                self.health.alerts = [{"event": event_name, "triggered": state_on}]
+                if state_changed:
+                    # Transition timestamp: stable signal for external consumers.
+                    self.health.caption_ts = time.time()
                 ttft_ms = metrics.get("ttft_ms")
                 tpot_ms = metrics.get("tpot_ms")
                 throughput_tps = metrics.get("throughput_tps")
@@ -389,6 +406,34 @@ class StreamManager:
             logger.debug("[%s] caption: %s", self.stream_id, caption)
 
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
+
+    def _advance_alert_state(self, model_triggered: bool, now_monotonic: float) -> tuple[bool, bool, bool]:
+        """Advance alert ON/OFF state with streaks and optional rearm cooldown.
+
+        Returns ``(state_on, state_changed, raised_now)``.
+        """
+        if model_triggered:
+            self._positive_streak += 1
+            self._negative_streak = 0
+        else:
+            self._negative_streak += 1
+            self._positive_streak = 0
+
+        state_changed = False
+        raised_now = False
+
+        if not self._alert_is_on:
+            if self._positive_streak >= settings.VLM_ALERT_ON_STREAK:
+                self._alert_is_on = True
+                state_changed = True
+                if now_monotonic - self._last_raise_ts >= settings.VLM_ALERT_REARM_SEC:
+                    raised_now = True
+                    self._last_raise_ts = now_monotonic
+        elif self._negative_streak >= settings.VLM_ALERT_OFF_STREAK:
+            self._alert_is_on = False
+            state_changed = True
+
+        return self._alert_is_on, state_changed, raised_now
 
     def _maybe_resize_frame_for_vlm(self, frame):
         target = settings.VLM_FRAME_RESIZE
