@@ -55,6 +55,11 @@ def _frame_size(key: str) -> tuple[int, int] | None:
     return (width, height)
 
 
+def _frame_size_default(key: str, default: tuple[int, int]) -> tuple[int, int]:
+    parsed = _frame_size(key)
+    return parsed if parsed is not None else default
+
+
 class Settings:
     # ---- server ----
     PORT: int = _int("PORT", 9100)
@@ -107,9 +112,20 @@ class Settings:
     VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
     VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 100)
 
-    # Optional pre-inference frame resize for VLM input. Leave empty to keep
-    # original sampled frame size. Format: WIDTHxHEIGHT (for example 640x360).
+    # Optional pre-inference frame resize for VLM input. Independent of
+    # SEGMENT_DIM_* below — applied on top of whatever the segment encode
+    # resolution is. Leave empty to caption at the segment's encode size.
+    # Format: WIDTHxHEIGHT (for example 640x360).
     VLM_FRAME_RESIZE: tuple[int, int] | None = _frame_size("VLM_FRAME_RESIZE")
+
+    # Benchmarked segment recording (encode) dimensions per source aspect
+    # ratio bucket; the closest bucket to the source's aspect ratio is used
+    # (see _calculate_scaled_dimensions in stream_manager.py). This only sets
+    # the .mp4 encode resolution — it does not affect VLM input size, which is
+    # controlled independently by VLM_FRAME_RESIZE above. Format: WIDTHxHEIGHT.
+    SEGMENT_DIM_1_1: tuple[int, int] = _frame_size_default("SEGMENT_DIM_1_1", (448, 448))
+    SEGMENT_DIM_4_3: tuple[int, int] = _frame_size_default("SEGMENT_DIM_4_3", (512, 384))
+    SEGMENT_DIM_16_9: tuple[int, int] = _frame_size_default("SEGMENT_DIM_16_9", (576, 320))
 
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
@@ -120,18 +136,9 @@ class Settings:
     MAX_SEGMENTS: int = _int("MAX_SEGMENTS", 20)
     VLM_MAX_INFERENCES: int = _int("VLM_MAX_INFERENCES", 20)
 
-    # ---- Segment cleanup (reclaim disk space once a segment is no longer needed) ----
-    # Always retain this many of the most-recently finalized segments per
-    # stream, regardless of VLM verdict/TTL, so a downstream deep analyzer
-    # (M4) has time to pick them up before they're reclaimed.
-    SEGMENT_RETENTION_GRACE: int = _int("SEGMENT_RETENTION_GRACE", 2)
-
-    # Fallback for streams with no alert_event (no Yes/No verdict available):
-    # reclaim a finalized segment once it's this many seconds old. 0 disables.
-    SEGMENT_TTL_SECONDS: float = _float("SEGMENT_TTL_SECONDS", 300.0)
-
-    # Hard backstop: max finalized segments retained on disk per stream,
-    # regardless of verdict/TTL (evicts oldest first). 0 disables the cap.
+    # Hard cap on finalized segments retained on disk per stream; oldest is
+    # deleted once a new segment finalizes and pushes the count over this.
+    # 0 disables the cap (unbounded).
     SEGMENT_MAX_ON_DISK: int = _int("SEGMENT_MAX_ON_DISK", 50)
 
     # ---- Segment writer + frame metadata registry (for deep-analysis handoff) ----
@@ -144,8 +151,9 @@ class Settings:
     # Frames per second registered into the metadata registry, per stream.
     FRAME_SAMPLE_FPS: int = _int("FRAME_SAMPLE_FPS", 1)
 
-    # Max frame metadata records kept in memory before oldest are evicted.
-    FRAME_REGISTRY_MAX_RECORDS: int = _int("FRAME_REGISTRY_MAX_RECORDS", 3000)
+    # Fixed per-stream cap on frame metadata records kept in memory; a stream's
+    # own oldest record is evicted once it exceeds this, independent of other streams.
+    FRAME_REGISTRY_MAX_RECORDS_PER_STREAM: int = _int("FRAME_REGISTRY_MAX_RECORDS_PER_STREAM", 500)
 
 
 settings = Settings()

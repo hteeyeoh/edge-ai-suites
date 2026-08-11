@@ -31,6 +31,12 @@ from backend.frame_registry import FrameRecord, SegmentFrameRegistry
 
 logger = logging.getLogger(__name__)
 
+# Area-averaging gives better downscale quality than the default bilinear;
+# fall back for older PyAV/ffmpeg builds that don't expose it.
+_REFORMAT_INTERPOLATION = getattr(
+    av.video.reformatter.Interpolation, "AREA", av.video.reformatter.Interpolation.BILINEAR
+)
+
 
 @dataclass
 class StreamHealth:
@@ -83,14 +89,7 @@ class StreamManager:
         self._segment_output_pattern = str(
             Path(settings.SEGMENT_OUTPUT_DIR) / f"{stream_id}_segment_%04d.mp4"
         )
-
-        # Segment cleanup bookkeeping. ``_segment_verdicts`` is written by the
-        # inference thread and read/cleared by the segment thread, so it needs
-        # its own lock; ``_finalized_segments`` is only ever touched by the
-        # segment thread.
-        self._segment_lock = threading.Lock()
-        self._segment_verdicts: dict[str, bool] = {}  # segment_path -> positive VLM verdict seen
-        self._finalized_segments: list[tuple[str, float]] = []  # (path, finalized_ts); verdict looked up lazily
+        self._finalized_segments: list[str] = []  # oldest-first; reclaimed past SEGMENT_MAX_ON_DISK
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -313,15 +312,14 @@ class StreamManager:
             logger.info("[%s] VLM inferencing on frame_id=%s", self.stream_id, frame_id)
 
             try:
-                caption, metrics = engine.caption_with_metrics(frame, prompt=self.vlm_prompt)
+                caption, metrics = engine.caption_with_metrics(
+                    frame, prompt=self.vlm_prompt, priority=bool(self.alert_event)
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[%s] VLM inference error: %s", self.stream_id, exc)
                 continue
 
             logger.info("[%s] VLM inference done for frame_id=%s: %s", self.stream_id, frame_id, caption)
-
-            if self.alert_event and frame_id is not None:
-                self._record_segment_verdict(frame_id, caption)
 
             with self._lock:
                 self.health.caption = caption
@@ -348,18 +346,6 @@ class StreamManager:
 
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
 
-    def _record_segment_verdict(self, frame_id: uuid.UUID, caption: str) -> None:
-        """Tag a segment 'positive' if any VLM sample within it answered Yes; sticky once positive."""
-        record = self.frame_registry.get_record(frame_id) if self.frame_registry else None
-        if record is None:
-            return
-        is_positive = caption.strip().lower().startswith("yes")
-        with self._segment_lock:
-            if is_positive:
-                self._segment_verdicts[record.segment_path] = True
-            else:
-                self._segment_verdicts.setdefault(record.segment_path, False)
-
     def _maybe_resize_frame_for_vlm(self, frame):
         """Resize a sampled RGB frame to ``VLM_FRAME_RESIZE`` before captioning, if configured."""
         target = settings.VLM_FRAME_RESIZE
@@ -375,7 +361,7 @@ class StreamManager:
         try:
             resized = (
                 av.VideoFrame.from_ndarray(frame, format="rgb24")
-                .reformat(width=target_w, height=target_h, format="rgb24")
+                .reformat(width=target_w, height=target_h, format="rgb24", interpolation=_REFORMAT_INTERPOLATION)
                 .to_ndarray(format="rgb24")
             )
             return resized
@@ -429,7 +415,16 @@ class StreamManager:
                 in_stream.thread_type = "AUTO"
 
                 new_width, new_height = _calculate_scaled_dimensions(
-                    in_stream.width, in_stream.height, 720
+                    in_stream.width, in_stream.height
+                )
+                logger.info(
+                    "[%s] source=%dx%d (aspect=%.4f) -> encode=%dx%d",
+                    self.stream_id,
+                    in_stream.width,
+                    in_stream.height,
+                    in_stream.width / in_stream.height,
+                    new_width,
+                    new_height,
                 )
 
                 output_container = av.open(
@@ -462,7 +457,7 @@ class StreamManager:
 
                         if frame.width != new_width or frame.height != new_height:
                             frame = reformatter.reformat(
-                                frame, width=new_width, height=new_height
+                                frame, width=new_width, height=new_height, interpolation=_REFORMAT_INTERPOLATION
                             )
 
                         pts_seconds = (
@@ -477,7 +472,7 @@ class StreamManager:
 
                         if segment_idx != last_segment_idx:
                             if last_segment_path is not None:
-                                self._finalize_segment(last_segment_path)
+                                self._reclaim_old_segments(last_segment_path)
                             last_segment_idx = segment_idx
                             last_segment_path = segment_path
                             segments_written += 1
@@ -549,101 +544,52 @@ class StreamManager:
 
         logger.info("Segment writer loop exited for stream '%s'", self.stream_id)
 
-    def _finalize_segment(self, segment_path: str) -> None:
-        """Track a just-rotated-out segment; its verdict is looked up lazily, not frozen here.
+    def _reclaim_old_segments(self, finalized_segment_path: str) -> None:
+        """Delete this stream's oldest finalized segments once over SEGMENT_MAX_ON_DISK.
 
-        VLM inference is asynchronous and can still be in flight for the last
-        sampled frame of this segment, so we deliberately don't consult
-        ``_segment_verdicts`` yet — that happens in ``_sweep_segments`` only
-        once the segment ages past the retention grace window, giving any
-        in-flight caption time to land first.
+        Only ever called with a segment that has already rotated out (never
+        the one ``ffmpeg`` is still writing), so this can't delete an open file.
         """
-        self._finalized_segments.append((segment_path, time.monotonic()))
-        self._sweep_segments()
+        if not settings.SEGMENT_MAX_ON_DISK:
+            return
+        self._finalized_segments.append(finalized_segment_path)
+        while len(self._finalized_segments) > settings.SEGMENT_MAX_ON_DISK:
+            self._delete_segment(self._finalized_segments.pop(0))
 
-    def _sweep_segments(self) -> None:
-        """Reclaim finalized segments outside the retention grace window.
-
-        Segments with no positive VLM verdict (alert streams) or past their
-        TTL (non-alert streams) are deleted along with their registry
-        entries; the most recent ``SEGMENT_RETENTION_GRACE`` segments are
-        always exempt, and ``SEGMENT_MAX_ON_DISK`` is a hard backstop applied
-        afterwards regardless of verdict.
-        """
-        alert_mode = bool(self.alert_event)
-        grace = max(0, settings.SEGMENT_RETENTION_GRACE)
-        eligible_count = max(0, len(self._finalized_segments) - grace)
-
-        kept: list[tuple[str, float]] = []
-        for index, (segment_path, finalized_ts) in enumerate(self._finalized_segments):
-            if index >= eligible_count:
-                kept.append((segment_path, finalized_ts))  # within the grace window
-                continue
-
-            if alert_mode:
-                # Any positive sample recorded for this segment (even one that
-                # landed after finalize, as long as it's within the grace
-                # window) is enough to keep it — sticky-positive is enforced
-                # in _record_segment_verdict.
-                with self._segment_lock:
-                    positive = self._segment_verdicts.pop(segment_path, False)
-                reclaim = not positive
-                reason = "negative-verdict"
-            else:
-                reclaim = (
-                    settings.SEGMENT_TTL_SECONDS > 0
-                    and time.monotonic() - finalized_ts >= settings.SEGMENT_TTL_SECONDS
-                )
-                reason = "ttl"
-
-            if reclaim:
-                self._delete_segment(segment_path, reason)
-            else:
-                kept.append((segment_path, finalized_ts))
-
-        if settings.SEGMENT_MAX_ON_DISK:
-            while len(kept) > settings.SEGMENT_MAX_ON_DISK:
-                segment_path, _finalized_ts = kept.pop(0)
-                with self._segment_lock:
-                    self._segment_verdicts.pop(segment_path, None)
-                self._delete_segment(segment_path, "disk-cap")
-
-        self._finalized_segments = kept
-
-    def _delete_segment(self, segment_path: str, reason: str) -> None:
+    def _delete_segment(self, segment_path: str) -> None:
         try:
             Path(segment_path).unlink(missing_ok=True)
         except OSError as exc:
             logger.warning("[%s] failed to delete segment %s: %s", self.stream_id, segment_path, exc)
             return
-        removed = self.frame_registry.remove_segment(self.stream_id, segment_path)
+        removed = self.frame_registry.remove_segment(self.stream_id, segment_path) if self.frame_registry else 0
         logger.info(
-            "[%s] reclaimed segment=%s reason=%s (removed %d registry entries)",
+            "[%s] reclaimed segment=%s (removed %d registry entries)",
             self.stream_id,
             segment_path,
-            reason,
             removed,
         )
 
 
-def _calculate_scaled_dimensions(
-    width: int, height: int, max_dimension: int = 720
-) -> tuple[int, int]:
-    """Scale down to max_dimension on the longer side, preserving aspect ratio.
+def _calculate_scaled_dimensions(width: int, height: int) -> tuple[int, int]:
+    """Snap to the closest benchmarked segment-recording dimensions for the source aspect ratio.
 
-    Both dimensions are forced even, as required by libx264.
+    Picks the nearest of SEGMENT_DIM_1_1/4_3/16_9 by aspect ratio, oriented to
+    match the source (landscape vs portrait). All presets are even, as
+    required by libx264.
     """
-    aspect_ratio = width / height
+    is_portrait = height > width
+    long_side, short_side = (height, width) if is_portrait else (width, height)
+    ratio = long_side / short_side
 
-    if width <= max_dimension and height <= max_dimension:
-        new_width, new_height = width, height
-    elif width > height:
-        new_width = max_dimension
-        new_height = int(new_width / aspect_ratio)
-    else:
-        new_height = max_dimension
-        new_width = int(new_height * aspect_ratio)
+    presets = (
+        (1.0, settings.SEGMENT_DIM_1_1),
+        (4 / 3, settings.SEGMENT_DIM_4_3),
+        (16 / 9, settings.SEGMENT_DIM_16_9),
+    )
+    _, (preset_w, preset_h) = min(presets, key=lambda item: abs(item[0] - ratio))
 
+    new_width, new_height = (preset_h, preset_w) if is_portrait else (preset_w, preset_h)
     new_width = new_width if new_width % 2 == 0 else new_width - 1
     new_height = new_height if new_height % 2 == 0 else new_height - 1
     return new_width, new_height

@@ -113,6 +113,9 @@ services:
       - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
       - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
       - VLM_FRAME_RESIZE=${VLM_FRAME_RESIZE:-}
+      - SEGMENT_DIM_1_1=${SEGMENT_DIM_1_1:-448x448}
+      - SEGMENT_DIM_4_3=${SEGMENT_DIM_4_3:-512x384}
+      - SEGMENT_DIM_16_9=${SEGMENT_DIM_16_9:-576x320}
       - MAX_STREAMS=${MAX_STREAMS:-8}
       # ---- Testing limits (0 = unlimited) ----
       - MAX_SEGMENTS=${MAX_SEGMENTS:-20}
@@ -121,18 +124,16 @@ services:
       - SEGMENT_OUTPUT_DIR=${SEGMENT_OUTPUT_DIR:-segments}
       - SEGMENT_TIME_SECONDS=${SEGMENT_TIME_SECONDS:-15}
       - FRAME_SAMPLE_FPS=${FRAME_SAMPLE_FPS:-1}
-      - FRAME_REGISTRY_MAX_RECORDS=${FRAME_REGISTRY_MAX_RECORDS:-3000}
-      # ---- Segment cleanup ----
-      - SEGMENT_RETENTION_GRACE=${SEGMENT_RETENTION_GRACE:-2}
-      - SEGMENT_TTL_SECONDS=${SEGMENT_TTL_SECONDS:-300.0}
+      - FRAME_REGISTRY_MAX_RECORDS_PER_STREAM=${FRAME_REGISTRY_MAX_RECORDS_PER_STREAM:-500}
       - SEGMENT_MAX_ON_DISK=${SEGMENT_MAX_ON_DISK:-50}
     volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
       - "./ov_models:/models:ro"
-      # Rolling .mp4 segments written by the frame registry. Bind-mounted to a
-      # disk-backed host directory (not tmpfs) so segments persist across
-      # container restarts and remain visible to a future external M4
-      # deep-analysis process reading the same host path.
+      # Rolling .mp4 segments written by the frame registry. Bind-mounted so
+      # segments remain visible to deep-analysis process
+      # reading the same host path. Point HOST_SEGMENTS_DIR at a tmpfs-backed
+      # path (e.g. /dev/shm/...) for in-memory storage, or a real disk path
+      # for persistence across restarts.
       - "${HOST_SEGMENTS_DIR:-./segments}:/app/segments"
     # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
     # Harmless for CPU inference; requires the host Intel compute runtime.

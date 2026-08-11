@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -30,19 +31,23 @@ class FrameRecord:
 
 
 class SegmentFrameRegistry:
-    """Thread-safe bounded registry keyed by UUID; evicts oldest on overflow."""
+    """Thread-safe registry with a fixed per-stream cap; evicts a stream's own oldest record on overflow."""
 
-    def __init__(self, max_records: int = 3000):
+    def __init__(self, max_records_per_stream: int = 500):
         self._records: Dict[uuid.UUID, FrameRecord] = {}
+        # Per-stream insertion order, used to evict only within the offending stream.
+        self._stream_order: Dict[str, "OrderedDict[uuid.UUID, None]"] = {}
         self._lock = threading.Lock()
-        self._max_records = max_records
+        self._max_records_per_stream = max_records_per_stream
 
     def register(self, record: FrameRecord) -> None:
         with self._lock:
             self._records[record.frame_id] = record
-            if len(self._records) > self._max_records:
-                # plain dict preserves insertion order since Python 3.7
-                del self._records[next(iter(self._records))]
+            order = self._stream_order.setdefault(record.stream_id, OrderedDict())
+            order[record.frame_id] = None
+            if len(order) > self._max_records_per_stream:
+                oldest_id, _ = order.popitem(last=False)
+                del self._records[oldest_id]
 
     def get_record(self, frame_id: uuid.UUID) -> Optional[FrameRecord]:
         with self._lock:
@@ -56,6 +61,7 @@ class SegmentFrameRegistry:
     def remove_segment(self, stream_id: str, segment_path: str) -> int:
         """Purge every record for a reclaimed segment file. Returns the count removed."""
         with self._lock:
+            order = self._stream_order.get(stream_id)
             stale = [
                 frame_id
                 for frame_id, record in self._records.items()
@@ -63,8 +69,9 @@ class SegmentFrameRegistry:
             ]
             for frame_id in stale:
                 del self._records[frame_id]
+                if order is not None:
+                    order.pop(frame_id, None)
             return len(stale)
-
 
     def latest(self, stream_id: Optional[str] = None, limit: int = 50) -> List[FrameRecord]:
         """Return the most recently registered records, optionally filtered by stream."""
@@ -82,6 +89,7 @@ class SegmentFrameRegistry:
                 per_stream[record.stream_id] = per_stream.get(record.stream_id, 0) + 1
         return {
             "total": total,
-            "capacity": self._max_records,
+            "per_stream_capacity": self._max_records_per_stream,
             "per_stream": per_stream,
         }
+

@@ -30,7 +30,7 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 _startup_time = time.monotonic()
-frame_registry = SegmentFrameRegistry(max_records=settings.FRAME_REGISTRY_MAX_RECORDS)
+frame_registry = SegmentFrameRegistry(max_records_per_stream=settings.FRAME_REGISTRY_MAX_RECORDS_PER_STREAM)
 registry = StreamRegistry(frame_registry)
 
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")

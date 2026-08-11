@@ -4,8 +4,10 @@
 """OpenVINO GenAI vision-language captioning engine.
 
 A single :class:`VLMEngine` wraps one ``openvino_genai.VLMPipeline``. The model
-is heavy and not safe to call concurrently, so :meth:`caption` serialises every
-request behind a lock — multiple stream workers share one loaded pipeline.
+is heavy and not safe to call concurrently, so all requests are served one at a
+time by a single dispatcher thread from a priority queue: alert-driven streams
+are served ahead of passive ones, FIFO within each tier, instead of racing for
+a lock with no ordering guarantee.
 
 The model tree is laid out per device as
 ``<VLM_MODELS_DIR>/<device>/<VLM_MODEL>`` (e.g. ``/models/cpu/InternVL2-1B``),
@@ -14,8 +16,10 @@ matching how the models are mounted into the container.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import os
+import queue
 import re
 import threading
 import time
@@ -28,13 +32,25 @@ from backend.config import settings
 logger = logging.getLogger(__name__)
 
 
+class _CaptionRequest:
+    """One queued captioning request; the submitting thread blocks on `event`."""
+
+    __slots__ = ("rgb_frame", "prompt", "event", "result", "error")
+
+    def __init__(self, rgb_frame: np.ndarray, prompt: str) -> None:
+        self.rgb_frame = rgb_frame
+        self.prompt = prompt
+        self.event = threading.Event()
+        self.result: Optional[tuple[str, dict[str, Optional[float]]]] = None
+        self.error: Optional[BaseException] = None
+
+
 class VLMEngine:
     """Thread-safe wrapper around an OpenVINO GenAI VLM pipeline."""
 
     def __init__(self) -> None:
         self._pipe = None
         self._gen_config = None
-        self._lock = threading.Lock()
         self._model_path = os.path.join(
             settings.VLM_MODELS_DIR,
             settings.VLM_DEVICE.lower(),
@@ -42,6 +58,15 @@ class VLMEngine:
         )
         self._load()
         self._metrics_debug_logged = False
+
+        # Priority queue of (rank, seq, request): rank 0 = alert-priority lane,
+        # rank 1 = normal lane; seq preserves FIFO order within a lane.
+        self._queue: "queue.PriorityQueue[tuple[int, int, _CaptionRequest]]" = queue.PriorityQueue()
+        self._seq_counter = itertools.count()
+        self._dispatch_thread = threading.Thread(
+            target=self._dispatch_loop, name="vlm-dispatch", daemon=True
+        )
+        self._dispatch_thread.start()
 
     def _load(self) -> None:
         # Imported lazily so the app still starts if GenAI is unavailable.
@@ -420,45 +445,73 @@ class VLMEngine:
             "throughput_tps": throughput_tps,
         }
 
+    def _dispatch_loop(self) -> None:
+        """Single worker thread; the only caller of `_generate`, so no lock is needed there."""
+        while True:
+            _rank, _seq, request = self._queue.get()
+            try:
+                request.result = self._generate(request.rgb_frame, request.prompt)
+            except Exception as exc:  # noqa: BLE001
+                request.error = exc
+            finally:
+                request.event.set()
+
+    def _generate(
+        self, rgb_frame: np.ndarray, prompt_text: str
+    ) -> tuple[str, dict[str, Optional[float]]]:
+        import openvino as ov
+
+        # GenAI expects a batched NHWC uint8 tensor.
+        tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
+        t0 = time.perf_counter()
+        result = self._pipe.generate(
+            prompt_text,
+            images=[tensor],
+            generation_config=self._gen_config,
+        )
+        elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+        metrics = self._extract_perf_metrics(result)
+        if self._metrics_unavailable(metrics):
+            metrics = self._extract_perf_metrics_from_pipe(self._pipe)
+
+        if not self._metrics_debug_logged and self._metrics_unavailable(metrics):
+            self._metrics_debug_logged = True
+            logger.warning(
+                "VLM metrics unavailable from current runtime API | result_attrs=%s | pipe_attrs=%s",
+                self._debug_attr_names(result),
+                self._debug_attr_names(self._pipe),
+            )
+
+        caption_text = self._extract_caption_text(result)
+        metrics = self._fill_fallback_metrics(metrics, elapsed_ms, caption_text)
+        return caption_text, metrics
+
     def caption_with_metrics(
         self,
         rgb_frame: np.ndarray,
         prompt: Optional[str] = None,
+        *,
+        priority: bool = False,
     ) -> tuple[str, dict[str, Optional[float]]]:
-        """Return caption text and optional latency/throughput metrics."""
-        import openvino as ov
+        """Queue a captioning request and block until served.
 
+        `priority=True` (e.g. alert-driven streams) is served ahead of normal
+        requests; ordering within each tier is FIFO.
+        """
         prompt_text = (prompt or "").strip()
         if not prompt_text:
             raise ValueError("prompt is required")
 
-        # GenAI expects a batched NHWC uint8 tensor.
-        tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
-        with self._lock:
-            t0 = time.perf_counter()
-            result = self._pipe.generate(
-                prompt_text,
-                images=[tensor],
-                generation_config=self._gen_config,
-            )
-            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        request = _CaptionRequest(rgb_frame, prompt_text)
+        rank = 0 if priority else 1
+        self._queue.put((rank, next(self._seq_counter), request))
+        request.event.wait()
 
-            metrics = self._extract_perf_metrics(result)
-            if self._metrics_unavailable(metrics):
-                metrics = self._extract_perf_metrics_from_pipe(self._pipe)
-
-            if not self._metrics_debug_logged and self._metrics_unavailable(metrics):
-                self._metrics_debug_logged = True
-                logger.warning(
-                    "VLM metrics unavailable from current runtime API | result_attrs=%s | pipe_attrs=%s",
-                    self._debug_attr_names(result),
-                    self._debug_attr_names(self._pipe),
-                )
-
-            caption_text = self._extract_caption_text(result)
-            metrics = self._fill_fallback_metrics(metrics, elapsed_ms, caption_text)
-
-        return caption_text, metrics
+        if request.error is not None:
+            raise request.error
+        assert request.result is not None
+        return request.result
 
     def caption(self, rgb_frame: np.ndarray, prompt: Optional[str] = None) -> str:
         """Return a caption for one RGB frame (H×W×3, uint8)."""
