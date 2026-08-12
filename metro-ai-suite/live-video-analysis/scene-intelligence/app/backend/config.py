@@ -145,7 +145,8 @@ class Settings:
 
     # Hard cap on finalized segments retained on disk per stream; oldest is
     # deleted once a new segment finalizes and pushes the count over this.
-    # 0 disables the cap (unbounded).
+    # 0 disables the cap (unbounded). Retained video per stream is roughly
+    # SEGMENT_MAX_ON_DISK * SEGMENT_TIME_SECONDS seconds (default: 50 * 15s = 750s / ~12.5 min).
     SEGMENT_MAX_ON_DISK: int = _int("SEGMENT_MAX_ON_DISK", 50)
 
     # ---- Segment writer + frame metadata registry (for deep-analysis handoff) ----
@@ -160,6 +161,9 @@ class Settings:
 
     # Fixed per-stream cap on frame metadata records kept in memory; a stream's
     # own oldest record is evicted once it exceeds this, independent of other streams.
+    # One record per sampled frame, so retained history is roughly
+    # FRAME_REGISTRY_MAX_RECORDS_PER_STREAM / FRAME_SAMPLE_FPS seconds
+    # (default: 500 / 1fps = 500s / ~8.3 min).
     FRAME_REGISTRY_MAX_RECORDS_PER_STREAM: int = _int("FRAME_REGISTRY_MAX_RECORDS_PER_STREAM", 500)
 
     # ---- Deep analyzer (multi-frame follow-up on a "Yes" alert verdict) ----

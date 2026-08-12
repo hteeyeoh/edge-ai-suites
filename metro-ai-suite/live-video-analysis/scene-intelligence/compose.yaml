@@ -132,7 +132,12 @@ services:
       - SEGMENT_OUTPUT_DIR=${SEGMENT_OUTPUT_DIR:-segments}
       - SEGMENT_TIME_SECONDS=${SEGMENT_TIME_SECONDS:-15}
       - FRAME_SAMPLE_FPS=${FRAME_SAMPLE_FPS:-1}
+      # One record per sampled frame; retained history ≈
+      # FRAME_REGISTRY_MAX_RECORDS_PER_STREAM / FRAME_SAMPLE_FPS seconds
+      # (default: 500 / 1fps = 500s / ~8.3 min).
       - FRAME_REGISTRY_MAX_RECORDS_PER_STREAM=${FRAME_REGISTRY_MAX_RECORDS_PER_STREAM:-500}
+      # Retained video per stream ≈ SEGMENT_MAX_ON_DISK * SEGMENT_TIME_SECONDS
+      # seconds (default: 50 * 15s = 750s / ~12.5 min).
       - SEGMENT_MAX_ON_DISK=${SEGMENT_MAX_ON_DISK:-50}
     volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
