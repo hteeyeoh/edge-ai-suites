@@ -288,7 +288,7 @@ class StreamManager:
         instead of inside the sampler keeps the source socket drained the whole
         time, so inference bursts never stall the relay.
         """
-        from backend.vlm import get_vlm_engine
+        from backend.vlm import get_vlm_engine, parse_yes_no
 
         try:
             engine = get_vlm_engine()
@@ -334,6 +334,20 @@ class StreamManager:
                 if throughput_tps is not None:
                     self.health.throughput_tps = throughput_tps
             logger.debug("[%s] caption: %s", self.stream_id, caption)
+
+            if settings.DEEP_ANALYZER_ENABLED and self.alert_event and parse_yes_no(caption) and frame_id is not None:
+                segment_path = self.frame_registry.get_segment(frame_id) if self.frame_registry else None
+                if segment_path:
+                    from backend.deep_analyzer import get_deep_analyzer
+
+                    try:
+                        get_deep_analyzer().submit(self.stream_id, segment_path, self.alert_event, frame_id)
+                    except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured
+                        logger.error("[%s] deep analyzer disabled: %s", self.stream_id, exc)
+                else:
+                    logger.warning(
+                        "[%s] 'Yes' verdict for frame_id=%s but no segment on record", self.stream_id, frame_id
+                    )
 
             inference_count += 1
             if settings.VLM_MAX_INFERENCES and inference_count >= settings.VLM_MAX_INFERENCES:
@@ -473,6 +487,7 @@ class StreamManager:
                         if segment_idx != last_segment_idx:
                             if last_segment_path is not None:
                                 self._reclaim_old_segments(last_segment_path)
+                                self._notify_segment_finalized(last_segment_path)
                             last_segment_idx = segment_idx
                             last_segment_path = segment_path
                             segments_written += 1
@@ -555,6 +570,17 @@ class StreamManager:
         self._finalized_segments.append(finalized_segment_path)
         while len(self._finalized_segments) > settings.SEGMENT_MAX_ON_DISK:
             self._delete_segment(self._finalized_segments.pop(0))
+
+    def _notify_segment_finalized(self, finalized_segment_path: str) -> None:
+        """Tell the deep analyzer this segment has rotated out and is safe to read."""
+        if not settings.DEEP_ANALYZER_ENABLED:
+            return
+        from backend.deep_analyzer import get_deep_analyzer
+
+        try:
+            get_deep_analyzer().on_segment_finalized(finalized_segment_path)
+        except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured
+            logger.error("[%s] deep analyzer disabled: %s", self.stream_id, exc)
 
     def _delete_segment(self, segment_path: str) -> None:
         try:

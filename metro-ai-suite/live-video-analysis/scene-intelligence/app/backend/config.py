@@ -162,6 +162,46 @@ class Settings:
     # own oldest record is evicted once it exceeds this, independent of other streams.
     FRAME_REGISTRY_MAX_RECORDS_PER_STREAM: int = _int("FRAME_REGISTRY_MAX_RECORDS_PER_STREAM", 500)
 
+    # ---- Deep analyzer (multi-frame follow-up on a "Yes" alert verdict) ----
+    # When true, a segment whose sampled frame gets a "Yes" verdict from the
+    # fast VLM is handed to a second, video-capable model for a richer,
+    # multi-frame confirmation. Independent pipeline/device from VLM_*.
+    DEEP_ANALYZER_ENABLED: bool = _bool("DEEP_ANALYZER_ENABLED", True)
+
+    # Model tree layout mirrors VLM_MODELS_DIR/VLM_MODEL:
+    # <DEEP_ANALYZER_MODELS_DIR>/<device>/<DEEP_ANALYZER_MODEL>.
+    DEEP_ANALYZER_MODELS_DIR: str = os.getenv("DEEP_ANALYZER_MODELS_DIR", "/models")
+    DEEP_ANALYZER_MODEL: str = os.getenv("DEEP_ANALYZER_MODEL", "Qwen3.5-2B-int4-ov")
+    DEEP_ANALYZER_DEVICE: str = os.getenv("DEEP_ANALYZER_DEVICE", "GPU")
+
+    # Frames uniformly sampled from a finalized segment per deep-analysis run.
+    DEEP_ANALYZER_MAX_FRAMES: int = _int("DEEP_ANALYZER_MAX_FRAMES", 8)
+    DEEP_ANALYZER_MAX_TOKENS: int = _int("DEEP_ANALYZER_MAX_TOKENS", 128)
+
+    # Deep-analyzer NPU-specific configuration. Only used when
+    # DEEP_ANALYZER_DEVICE=NPU (mirrors NPU_MAX_PROMPT_LEN/NPU_MIN_RESPONSE_LEN above).
+    DEEP_ANALYZER_NPU_MAX_PROMPT_LEN = _int("DEEP_ANALYZER_NPU_MAX_PROMPT_LEN", 4096)
+    DEEP_ANALYZER_NPU_MIN_RESPONSE_LEN = _int("DEEP_ANALYZER_NPU_MIN_RESPONSE_LEN", 512)
+
+    # Bounded cache size for the dedup/finalized-segment tracking sets in
+    # backend.deep_analyzer (per-process, not per-stream).
+    DEEP_ANALYZER_DEDUP_CACHE_SIZE: int = _int("DEEP_ANALYZER_DEDUP_CACHE_SIZE", 500)
+
+    # The "finalized" signal is a best-effort prediction (see
+    # StreamManager._notify_segment_finalized) — the muxer may not have
+    # flushed the segment's trailer to disk yet when it fires. Retries give
+    # that a moment to catch up before giving up on the segment.
+    DEEP_ANALYZER_SEGMENT_READ_MAX_RETRIES: int = _int("DEEP_ANALYZER_SEGMENT_READ_MAX_RETRIES", 5)
+    DEEP_ANALYZER_SEGMENT_READ_RETRY_DELAY: float = _float("DEEP_ANALYZER_SEGMENT_READ_RETRY_DELAY", 1.0)
+
+    # Multi-frame confirmation prompt; {event} is substituted with the
+    # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
+    DEEP_ANALYZER_PROMPT_TEMPLATE: str = (
+        "Task: These frames are sampled in order from a short video clip. "
+        "Determine whether the event {event} is present. "
+        "Describe what is happening across the frames and justify your conclusion."
+    )
+
 
 settings = Settings()
 
