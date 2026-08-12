@@ -62,6 +62,12 @@ WEBRTC_SIGNALING_URL="http://${HOST_IP}:${WEBRTC_SIGNALING_PORT}"
 RENDER_GROUP_ID="$(getent group render 2>/dev/null | cut -d: -f3)"
 RENDER_GROUP_ID="${RENDER_GROUP_ID:-992}"
 
+HAS_NPU_DEVICE=false
+if [[ -e /dev/accel ]]; then
+  HAS_NPU_DEVICE=true
+  NPU_DEVICE_PATH="/dev/accel"
+fi
+
 HOST_SEGMENTS_DIR="$(awk -F= '$1 == "HOST_SEGMENTS_DIR" {print $2; exit}' "${ENV_EXAMPLE}")"
 HOST_SEGMENTS_DIR="${HOST_SEGMENTS_DIR:-/dev/shm/scene-intelligence-segments}"
 mkdir -p "${HOST_SEGMENTS_DIR}"
@@ -80,11 +86,20 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     RENDER_GROUP_ID=*)
       printf 'RENDER_GROUP_ID=%s\n' "${RENDER_GROUP_ID}" >> "${tmp_file}"
       ;;
+    NPU_DEVICE_PATH=*)
+      if [[ "${HAS_NPU_DEVICE}" == "true" ]]; then
+        printf 'NPU_DEVICE_PATH=%s\n' "${NPU_DEVICE_PATH}" >> "${tmp_file}"
+      fi
+      ;;
     *)
       printf '%s\n' "$line" >> "${tmp_file}"
       ;;
   esac
 done < "${ENV_EXAMPLE}"
+
+if [[ "${HAS_NPU_DEVICE}" == "true" ]] && ! grep -q '^NPU_DEVICE_PATH=' "${tmp_file}"; then
+  printf 'NPU_DEVICE_PATH=%s\n' "${NPU_DEVICE_PATH}" >> "${tmp_file}"
+fi
 
 mv "${tmp_file}" "${ENV_FILE}"
 trap - EXIT
@@ -95,3 +110,6 @@ echo "WEBRTC_SIGNALING_URL=${WEBRTC_SIGNALING_URL}"
 echo "RENDER_GROUP_ID=${RENDER_GROUP_ID}"
 echo "HOST_SEGMENTS_DIR=${HOST_SEGMENTS_DIR}"
 echo "UI URL: http://${HOST_IP}:9100"
+if [[ "${HAS_NPU_DEVICE}" == "true" ]]; then
+  echo "NPU device detected. NPU_DEVICE_PATH=${NPU_DEVICE_PATH}"
+fi
