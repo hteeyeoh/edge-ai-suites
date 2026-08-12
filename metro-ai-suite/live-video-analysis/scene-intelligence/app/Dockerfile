@@ -18,6 +18,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---------------------------------------------------------------------------
 # Stage 2 — lean runtime image
 # ---------------------------------------------------------------------------
+# Security note (documented exception): this image intentionally has no
+# static `USER appuser` directive. It starts as root so entrypoint.sh can fix
+# ownership of the bind-mounted segments volume (which Docker/tmpfs may
+# (re)create as root), then immediately drops all privileges to `appuser`
+# via `setpriv` before exec'ing the actual app — the running app process is
+# never root. See entrypoint.sh for the full rationale.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -70,7 +76,12 @@ COPY --chown=appuser:appuser main.py ./
 COPY --chown=appuser:appuser backend/ ./backend/
 COPY --chown=appuser:appuser ui/ ./ui/
 
-USER appuser
+# Fixes bind-mounted segments-dir ownership at startup, then drops to
+# appuser — see entrypoint.sh for why this can't just be `USER appuser`.
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
 EXPOSE 9100
 
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9100"]

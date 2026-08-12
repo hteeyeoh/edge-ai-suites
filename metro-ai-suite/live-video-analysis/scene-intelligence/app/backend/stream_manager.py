@@ -3,14 +3,22 @@
 
 """PyAV-based RTSP relay into MediaMTX for WebRTC rendering.
 
-Each :class:`StreamManager` owns one video source. A dedicated daemon thread
-opens the source with PyAV and remuxes its packets (stream-copy, no re-encode)
-into MediaMTX over RTSP. MediaMTX then serves the stream to the browser over
-WebRTC (WHEP), giving low-latency playback without decoding on the backend.
+Each :class:`StreamManager` owns one video source. A single dedicated daemon
+thread (``_stream_loop``) opens the source with PyAV *once* and, per demuxed
+packet, does up to two jobs on that one connection:
 
-Because this path is a pure remux, it leaves the compressed frames untouched;
-a second connection (see ``_segment_and_register_loop``) decodes the same
-source for segment writing, frame registration, and VLM inference handoff.
+* remux the packet (stream-copy, no re-encode) into MediaMTX over RTSP, which
+  then serves the stream to the browser over WebRTC (WHEP) for low-latency
+  playback; and
+* decode it for segment writing, frame registration, and VLM inference
+  handoff, folded into the same pass.
+
+Both jobs share one input connection and one reconnect/backoff timeline
+instead of opening the source twice, halving the load placed on the camera
+and avoiding two independent, potentially out-of-sync reconnect cycles. When
+segment writing/VLM is disabled (no ``frame_registry``), decoding is skipped
+entirely and this degrades to the original pure remux path with no decode
+CPU cost.
 """
 
 from __future__ import annotations
@@ -28,6 +36,7 @@ import av
 
 from backend.config import settings
 from backend.frame_registry import FrameRecord, SegmentFrameRegistry
+from backend.deep_analyzer import get_deep_analyzer
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +94,10 @@ class StreamManager:
 
         # Segment writer + frame metadata registry (deep-analysis handoff).
         self.frame_registry = frame_registry
-        self._segment_thread: Optional[threading.Thread] = None
         self._segment_output_pattern = str(
             Path(settings.SEGMENT_OUTPUT_DIR) / f"{stream_id}_segment_%04d.mp4"
         )
-        self._finalized_segments: list[str] = []  # oldest-first; reclaimed past SEGMENT_MAX_ON_DISK
+        self._finalized_segments: list[str] = []  # oldest-first; reclaimed past MAX_SEGMENTS
 
     # ------------------------------------------------------------------ #
     # Lifecycle
@@ -99,17 +107,22 @@ class StreamManager:
         if self._running:
             return
         self._running = True
+
+        if self.frame_registry is not None:
+            Path(settings.SEGMENT_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
+
         self._thread = threading.Thread(
-            target=self._relay_loop,
+            target=self._stream_loop,
             daemon=True,
-            name=f"relay-{self.stream_id}",
+            name=f"stream-{self.stream_id}",
         )
         self._thread.start()
         logger.info(
-            "Started relay '%s' (%s -> %s)",
+            "Started stream loop '%s' (%s -> %s, segments=%s)",
             self.stream_id,
             self.source_url,
             self.target_url,
+            self.frame_registry is not None,
         )
 
         if settings.VLM_ENABLED and self.vlm_prompt:
@@ -126,24 +139,12 @@ class StreamManager:
                 self.stream_id,
             )
 
-        if self.frame_registry is not None:
-            Path(settings.SEGMENT_OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-            self._segment_thread = threading.Thread(
-                target=self._segment_and_register_loop,
-                daemon=True,
-                name=f"segment-{self.stream_id}",
-            )
-            self._segment_thread.start()
-            logger.info("Started segment writer for '%s'", self.stream_id)
-
     def stop(self) -> None:
         self._running = False
         if self._thread:
             self._thread.join(timeout=5.0)
         if self._infer_thread:
             self._infer_thread.join(timeout=5.0)
-        if self._segment_thread:
-            self._segment_thread.join(timeout=5.0)
         with self._lock:
             self.health.publishing = False
         logger.info("Stopped relay '%s'", self.stream_id)
@@ -180,18 +181,52 @@ class StreamManager:
             }
         return {}
 
-    def _relay_loop(self) -> None:
-        if not settings.WEBRTC_AUTO_PUBLISH:
-            logger.info("WEBRTC_AUTO_PUBLISH disabled — relay '%s' idle", self.stream_id)
+    def _stream_loop(self) -> None:
+        """Single connection driving both the MediaMTX relay and segment/VLM sampling.
+
+        Opens the source exactly once per (re)connect attempt and, per demuxed
+        packet: remuxes it to MediaMTX (stream-copy) if relaying is enabled,
+        and decodes it for segment writing / frame registration / VLM handoff
+        if a ``frame_registry`` was supplied. Both jobs share one reconnect and
+        backoff timeline. If only relaying is enabled, no decoding happens at
+        all — this degrades to the original pure-remux, zero-decode-CPU path.
+
+        Trade-off of sharing one connection: relay-side failures (a persistent
+        mux error, or the input connection itself dropping) do reconnect
+        segment writing too, since both read from the same demux loop.
+        Segment-writer-side failures (e.g. a bad segments directory/disk
+        error) are isolated and do *not* tear down a healthy relay — they
+        just disable segment writing until the next reconnect attempt.
+
+        Segment writing never stops on its own: MAX_SEGMENTS caps disk usage
+        as a rolling buffer (oldest finalized segment deleted once the count
+        is exceeded, see ``_reclaim_old_segments``), not a hard limit on
+        writer lifetime. VLM_MAX_INFERENCES remains an independent cap on the
+        VLM worker and, like MAX_SEGMENTS, never forces a relay reconnect.
+        """
+        do_relay = settings.WEBRTC_AUTO_PUBLISH
+        do_segment = self.frame_registry is not None
+        if not do_relay and not do_segment:
+            logger.info(
+                "WEBRTC_AUTO_PUBLISH disabled and no frame registry configured — stream '%s' idle",
+                self.stream_id,
+            )
             return
 
         is_rtsp = str(self.source_url).startswith(("rtsp://", "rtsps://"))
+        vlm_active = do_segment and settings.VLM_ENABLED and bool(self.vlm_prompt)
+        last_vlm_sample = 0.0
+
+        last_segment_idx = -1
+        last_segment_path: Optional[str] = None
+
         backoff = 1.0
         max_backoff = 20.0
 
         while self._running:
             input_container = None
-            output_container = None
+            relay_output = None
+            segment_output = None
             try:
                 input_container = av.open(
                     self.source_url,
@@ -199,28 +234,86 @@ class StreamManager:
                     timeout=settings.RTSP_TIMEOUT,
                 )
                 in_stream = input_container.streams.video[0]
-                in_stream.thread_type = "NONE"  # remux only, never decode
+                in_stream.thread_type = "AUTO"
 
-                output_container = av.open(
-                    self.target_url,
-                    mode="w",
-                    format="rtsp",
-                    options={"rtsp_transport": "tcp"},
-                )
-                out_stream = output_container.add_stream_from_template(in_stream)
-
-                with self._lock:
-                    self.health.publishing = True
-                    self.health.codec = in_stream.codec_context.name
-                    self.health.resolution = (
-                        f"{in_stream.codec_context.width}x{in_stream.codec_context.height}"
+                relay_out_stream = None
+                if do_relay:
+                    relay_output = av.open(
+                        self.target_url,
+                        mode="w",
+                        format="rtsp",
+                        options={"rtsp_transport": "tcp"},
                     )
-                backoff = 1.0
-                logger.info("Relay '%s' publishing to MediaMTX", self.stream_id)
+                    relay_out_stream = relay_output.add_stream_from_template(in_stream)
 
+                    with self._lock:
+                        self.health.publishing = True
+                        self.health.codec = in_stream.codec_context.name
+                        self.health.resolution = (
+                            f"{in_stream.codec_context.width}x{in_stream.codec_context.height}"
+                        )
+                    logger.info("Relay '%s' publishing to MediaMTX", self.stream_id)
+
+                segment_out_stream = None
+                reformatter = None
+                new_width = new_height = None
+                avg_fps = None
+                sample_every = None
+                frame_count = 0
+                if do_segment:
+                    try:
+                        new_width, new_height = _calculate_scaled_dimensions(
+                            in_stream.width, in_stream.height
+                        )
+                        logger.info(
+                            "[%s] source=%dx%d (aspect=%.4f) -> encode=%dx%d",
+                            self.stream_id,
+                            in_stream.width,
+                            in_stream.height,
+                            in_stream.width / in_stream.height,
+                            new_width,
+                            new_height,
+                        )
+                        segment_output = av.open(
+                            self._segment_output_pattern,
+                            mode="w",
+                            format="stream_segment",
+                            options={"segment_time": str(settings.SEGMENT_TIME_SECONDS)},
+                        )
+                        segment_out_stream = segment_output.add_stream(
+                            "libx264", rate=in_stream.average_rate
+                        )
+                        segment_out_stream.width = new_width
+                        segment_out_stream.height = new_height
+                        segment_out_stream.pix_fmt = "yuv420p"
+                        segment_out_stream.thread_type = "AUTO"
+                        reformatter = av.video.reformatter.VideoReformatter()
+                        avg_fps = float(in_stream.average_rate)
+                        sample_every = max(1, int(avg_fps / settings.FRAME_SAMPLE_FPS))
+                    except Exception as exc:  # noqa: BLE001 - e.g. permission/disk errors on the segments dir
+                        # Segment writing is independent of the relay: don't let
+                        # a bad segments directory (or any other setup failure)
+                        # tear down an otherwise-healthy relay connection. Retry
+                        # opening it on the next reconnect instead.
+                        logger.warning(
+                            "[%s] segment writer setup failed, continuing without segments this "
+                            "connection (will retry next reconnect): %s",
+                            self.stream_id,
+                            exc,
+                        )
+                        if segment_output is not None:
+                            try:
+                                segment_output.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            segment_output = None
+                        segment_out_stream = None
+
+                backoff = 1.0
                 last_dts = None
                 mux_errors = 0
                 backward = 0
+
                 for packet in input_container.demux(in_stream):
                     if not self._running:
                         break
@@ -231,7 +324,9 @@ class StreamManager:
                     # The RTSP muxer rejects those with EINVAL, so drop them
                     # here instead of tearing the whole session down. If the
                     # clock genuinely reset (many backward in a row), adopt the
-                    # new timeline rather than dropping frames forever.
+                    # new timeline rather than dropping frames forever. Applying
+                    # this once, before decode/mux, keeps the relay output and
+                    # the decoded segment/VLM frames on the same deduped timeline.
                     if last_dts is not None and packet.dts <= last_dts:
                         backward += 1
                         if backward <= 10:
@@ -239,30 +334,119 @@ class StreamManager:
                     backward = 0
                     last_dts = packet.dts
 
-                    packet.stream = out_stream
+                    # Decode before mutating packet.stream below (muxing rebinds
+                    # the packet to the output stream/time_base); decode() itself
+                    # doesn't touch that binding, so it's safe to do first.
+                    decoded_frames = packet.decode() if segment_out_stream is not None else ()
+
+                    if do_relay:
+                        packet.stream = relay_out_stream
+                        try:
+                            relay_output.mux(packet)
+                            mux_errors = 0
+                        except av.error.FFmpegError as exc:
+                            if exc.errno == errno.EINVAL and mux_errors < 30:
+                                mux_errors += 1  # skip the bad packet, keep publishing
+                            else:
+                                raise  # persistent/other error → reconnect
+                        else:
+                            with self._lock:
+                                self.health.last_packet_ts = time.monotonic()
+                            # Local files have no wall-clock pacing; play at real time.
+                            if not is_rtsp and packet.duration:
+                                time.sleep(float(packet.duration * in_stream.time_base))
+
+                    for frame in decoded_frames:
+                        frame_count += 1
+
+                        if frame.width != new_width or frame.height != new_height:
+                            frame = reformatter.reformat(
+                                frame, width=new_width, height=new_height, interpolation=_REFORMAT_INTERPOLATION
+                            )
+
+                        pts_seconds = (
+                            float(frame.pts * in_stream.time_base)
+                            if frame.pts is not None
+                            else frame_count / avg_fps
+                        )
+                        segment_idx = int(pts_seconds / settings.SEGMENT_TIME_SECONDS)
+                        segment_path = self._segment_output_pattern.replace(
+                            "%04d", f"{segment_idx:04d}"
+                        )
+
+                        if segment_idx != last_segment_idx:
+                            if last_segment_path is not None:
+                                self._reclaim_old_segments(last_segment_path)
+                                self._notify_segment_finalized(last_segment_path)
+                            last_segment_idx = segment_idx
+                            last_segment_path = segment_path
+
+                        if frame_count % sample_every == 0:
+                            frame_id = uuid.uuid4()
+                            self.frame_registry.register(
+                                FrameRecord(
+                                    frame_id=frame_id,
+                                    stream_id=self.stream_id,
+                                    rtsp_url=self.source_url,
+                                    segment_path=segment_path,
+                                    pts_seconds=pts_seconds,
+                                )
+                            )
+                            logger.info(
+                                "[%s] registered frame_id=%s segment=%s pts=%.2fs",
+                                self.stream_id,
+                                frame_id,
+                                segment_path,
+                                pts_seconds,
+                            )
+
+                            if vlm_active:
+                                now = time.monotonic()
+                                if now - last_vlm_sample >= settings.VLM_INTERVAL:
+                                    last_vlm_sample = now
+                                    with self._frame_lock:
+                                        self._latest_frame = frame.to_ndarray(format="rgb24")
+                                        self._latest_frame_ts = now
+                                        self._latest_frame_id = frame_id
+                                    logger.info(
+                                        "[%s] handed frame_id=%s to VLM inference worker",
+                                        self.stream_id,
+                                        frame_id,
+                                    )
+
+                        try:
+                            for enc_packet in segment_out_stream.encode(frame):
+                                segment_output.mux(enc_packet)
+                        except Exception as exc:  # noqa: BLE001 - keep relay alive on segment write failure
+                            logger.warning(
+                                "[%s] segment encode/mux failed, disabling segment writer for "
+                                "this connection (will retry next reconnect): %s",
+                                self.stream_id,
+                                exc,
+                            )
+                            try:
+                                segment_output.close()
+                            except Exception:  # noqa: BLE001
+                                pass
+                            segment_output = None
+                            segment_out_stream = None
+                            break  # stop processing remaining decoded frames from this packet
+
+                if segment_out_stream is not None:
                     try:
-                        output_container.mux(packet)
-                        mux_errors = 0
-                    except av.error.FFmpegError as exc:
-                        if exc.errno == errno.EINVAL:
-                            mux_errors += 1
-                            if mux_errors <= 30:
-                                continue  # skip the bad packet, keep publishing
-                        raise  # persistent/other error → reconnect
-
-                    with self._lock:
-                        self.health.last_packet_ts = time.monotonic()
-
-                    # Local files have no wall-clock pacing; play at real time.
-                    if not is_rtsp and packet.duration:
-                        time.sleep(float(packet.duration * in_stream.time_base))
+                        for enc_packet in segment_out_stream.encode(None):
+                            segment_output.mux(enc_packet)
+                    except Exception as exc:  # noqa: BLE001 - best-effort flush on clean reconnect
+                        logger.warning(
+                            "[%s] segment writer final flush failed: %s", self.stream_id, exc
+                        )
 
             except av.error.FFmpegError as exc:
-                logger.warning("[%s] PyAV relay error: %s", self.stream_id, exc)
+                logger.warning("[%s] PyAV stream error: %s", self.stream_id, exc)
             except Exception as exc:  # noqa: BLE001 - keep the loop resilient
-                logger.warning("[%s] relay error: %s", self.stream_id, exc)
+                logger.warning("[%s] stream loop error: %s", self.stream_id, exc)
             finally:
-                for container in (output_container, input_container):
+                for container in (relay_output, segment_output, input_container):
                     if container is not None:
                         try:
                             container.close()
@@ -273,13 +457,14 @@ class StreamManager:
                 break
 
             with self._lock:
-                self.health.publishing = False
+                if do_relay:
+                    self.health.publishing = False
                 self.health.reconnect_count += 1
-            logger.info("[%s] reconnecting relay in %.0fs ...", self.stream_id, backoff)
+            logger.info("[%s] reconnecting stream in %.0fs ...", self.stream_id, backoff)
             time.sleep(backoff)
             backoff = min(backoff * 1.5, max_backoff)
 
-        logger.info("Relay loop exited for stream '%s'", self.stream_id)
+        logger.info("Stream loop exited for stream '%s'", self.stream_id)
 
     def _infer_worker(self) -> None:
         """Caption the most recent sampled frame, off the packet-draining path.
@@ -308,7 +493,7 @@ class StreamManager:
                 time.sleep(0.2)  # nothing new to caption yet
                 continue
             processed_ts = frame_ts
-            frame = self._maybe_resize_frame_for_vlm(frame)
+            # frame = self._maybe_resize_frame_for_vlm(frame)
             logger.info("[%s] VLM inferencing on frame_id=%s", self.stream_id, frame_id)
 
             try:
@@ -360,222 +545,57 @@ class StreamManager:
 
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
 
-    def _maybe_resize_frame_for_vlm(self, frame):
-        """Resize a sampled RGB frame to ``VLM_FRAME_RESIZE`` before captioning, if configured."""
-        target = settings.VLM_FRAME_RESIZE
-        if target is None:
-            return frame
+    # def _maybe_resize_frame_for_vlm(self, frame):
+    #     """Resize a sampled RGB frame to ``VLM_FRAME_RESIZE`` before captioning, if configured."""
+    #     target = settings.VLM_FRAME_RESIZE
+    #     if target is None:
+    #         return frame
 
-        target_w, target_h = target
-        src_h = getattr(frame, "shape", (0, 0))[0]
-        src_w = getattr(frame, "shape", (0, 0))[1]
-        if src_w == target_w and src_h == target_h:
-            return frame
+    #     target_w, target_h = map(int, target.split("x"))    
+    #     src_h = getattr(frame, "shape", (0, 0))[0]
+    #     src_w = getattr(frame, "shape", (0, 0))[1]
+    #     if src_w == target_w and src_h == target_h:
+    #         return frame
 
-        try:
-            resized = (
-                av.VideoFrame.from_ndarray(frame, format="rgb24")
-                .reformat(width=target_w, height=target_h, format="rgb24", interpolation=_REFORMAT_INTERPOLATION)
-                .to_ndarray(format="rgb24")
-            )
-            return resized
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[%s] VLM frame resize %sx%s -> %sx%s failed; using original frame (%s)",
-                self.stream_id,
-                src_w,
-                src_h,
-                target_w,
-                target_h,
-                exc,
-            )
-            return frame
-
-    def _segment_and_register_loop(self) -> None:
-        """Sample the source once per stream: register + segment, then hand off to VLM.
-
-        Runs on its own connection, independent of the relay, so a slow or
-        stalled writer never affects playback. Per decoded frame the flow is:
-        get the frame from RTSP -> register its metadata and mux it into the
-        rolling segment -> at the (lower) ``VLM_INTERVAL`` cadence, hand that
-        same frame to the inference worker via ``self._latest_frame``. Only
-        frame metadata (frame_id, segment_path, pts) is kept in memory via
-        ``self.frame_registry`` — no frame images are persisted to disk; a deep
-        analyzer resolves ``frame_id`` back to ``segment_path`` on demand.
-        """
-        assert self.frame_registry is not None
-
-        vlm_active = settings.VLM_ENABLED and bool(self.vlm_prompt)
-        last_vlm_sample = 0.0
-
-        segments_written = 0
-        last_segment_idx = -1
-        last_segment_path: Optional[str] = None
-        segment_limit_reached = False
-
-        backoff = 2.0
-        max_backoff = 20.0
-
-        while self._running and not segment_limit_reached:
-            input_container = None
-            output_container = None
-            try:
-                input_container = av.open(
-                    self.source_url,
-                    options=self._input_options(),
-                    timeout=settings.RTSP_TIMEOUT,
-                )
-                in_stream = input_container.streams.video[0]
-                in_stream.thread_type = "AUTO"
-
-                new_width, new_height = _calculate_scaled_dimensions(
-                    in_stream.width, in_stream.height
-                )
-                logger.info(
-                    "[%s] source=%dx%d (aspect=%.4f) -> encode=%dx%d",
-                    self.stream_id,
-                    in_stream.width,
-                    in_stream.height,
-                    in_stream.width / in_stream.height,
-                    new_width,
-                    new_height,
-                )
-
-                output_container = av.open(
-                    self._segment_output_pattern,
-                    mode="w",
-                    format="stream_segment",
-                    options={"segment_time": str(settings.SEGMENT_TIME_SECONDS)},
-                )
-                out_stream = output_container.add_stream(
-                    "libx264", rate=in_stream.average_rate
-                )
-                out_stream.width = new_width
-                out_stream.height = new_height
-                out_stream.pix_fmt = "yuv420p"
-                out_stream.thread_type = "AUTO"
-
-                reformatter = av.video.reformatter.VideoReformatter()
-
-                avg_fps = float(in_stream.average_rate)
-                sample_every = max(1, int(avg_fps / settings.FRAME_SAMPLE_FPS))
-                backoff = 2.0
-                frame_count = 0
-
-                for packet in input_container.demux(in_stream):
-                    if not self._running or segment_limit_reached:
-                        break
-
-                    for frame in packet.decode():
-                        frame_count += 1
-
-                        if frame.width != new_width or frame.height != new_height:
-                            frame = reformatter.reformat(
-                                frame, width=new_width, height=new_height, interpolation=_REFORMAT_INTERPOLATION
-                            )
-
-                        pts_seconds = (
-                            float(frame.pts * in_stream.time_base)
-                            if frame.pts is not None
-                            else frame_count / avg_fps
-                        )
-                        segment_idx = int(pts_seconds / settings.SEGMENT_TIME_SECONDS)
-                        segment_path = self._segment_output_pattern.replace(
-                            "%04d", f"{segment_idx:04d}"
-                        )
-
-                        if segment_idx != last_segment_idx:
-                            if last_segment_path is not None:
-                                self._reclaim_old_segments(last_segment_path)
-                                self._notify_segment_finalized(last_segment_path)
-                            last_segment_idx = segment_idx
-                            last_segment_path = segment_path
-                            segments_written += 1
-                            if settings.MAX_SEGMENTS and segments_written > settings.MAX_SEGMENTS:
-                                segment_limit_reached = True
-                                logger.info(
-                                    "[%s] MAX_SEGMENTS=%d reached; segment writer stopping (relay/VLM unaffected)",
-                                    self.stream_id,
-                                    settings.MAX_SEGMENTS,
-                                )
-                                break
-
-                        if frame_count % sample_every == 0:
-                            frame_id = uuid.uuid4()
-                            self.frame_registry.register(
-                                FrameRecord(
-                                    frame_id=frame_id,
-                                    stream_id=self.stream_id,
-                                    rtsp_url=self.source_url,
-                                    segment_path=segment_path,
-                                    pts_seconds=pts_seconds,
-                                )
-                            )
-                            logger.info(
-                                "[%s] registered frame_id=%s segment=%s pts=%.2fs",
-                                self.stream_id,
-                                frame_id,
-                                segment_path,
-                                pts_seconds,
-                            )
-
-                            if vlm_active:
-                                now = time.monotonic()
-                                if now - last_vlm_sample >= settings.VLM_INTERVAL:
-                                    last_vlm_sample = now
-                                    rgb = frame.to_ndarray(format="rgb24")
-                                    with self._frame_lock:
-                                        self._latest_frame = rgb
-                                        self._latest_frame_ts = now
-                                        self._latest_frame_id = frame_id
-                                    logger.info(
-                                        "[%s] handed frame_id=%s to VLM inference worker",
-                                        self.stream_id,
-                                        frame_id,
-                                    )
-
-                        for enc_packet in out_stream.encode(frame):
-                            output_container.mux(enc_packet)
-
-                for enc_packet in out_stream.encode(None):
-                    output_container.mux(enc_packet)
-
-            except av.error.FFmpegError as exc:
-                logger.warning("[%s] segment writer error: %s", self.stream_id, exc)
-            except Exception as exc:  # noqa: BLE001 - keep the loop resilient
-                logger.warning("[%s] segment writer loop error: %s", self.stream_id, exc)
-            finally:
-                for container in (output_container, input_container):
-                    if container is not None:
-                        try:
-                            container.close()
-                        except Exception:  # noqa: BLE001
-                            pass
-
-            if not self._running or segment_limit_reached:
-                break
-            time.sleep(backoff)
-            backoff = min(backoff * 1.5, max_backoff)
-
-        logger.info("Segment writer loop exited for stream '%s'", self.stream_id)
+    #     try:
+    #         resized = (
+    #             av.VideoFrame.from_ndarray(frame, format="rgb24")
+    #             .reformat(width=target_w, height=target_h, format="rgb24", interpolation=_REFORMAT_INTERPOLATION)
+    #             .to_ndarray(format="rgb24")
+    #         )
+    #         return resized
+    #     except Exception as exc:  # noqa: BLE001
+    #         logger.warning(
+    #             "[%s] VLM frame resize %sx%s -> %sx%s failed; using original frame (%s)",
+    #             self.stream_id,
+    #             src_w,
+    #             src_h,
+    #             target_w,
+    #             target_h,
+    #             exc,
+    #         )
+    #         return frame
 
     def _reclaim_old_segments(self, finalized_segment_path: str) -> None:
-        """Delete this stream's oldest finalized segments once over SEGMENT_MAX_ON_DISK.
+        """Roll the per-stream segment buffer: drop the oldest once over MAX_SEGMENTS.
 
+        This is what makes MAX_SEGMENTS a rolling buffer rather than a hard
+        stop — every time a segment finalizes, the oldest surviving segment
+        is deleted once the retained count exceeds MAX_SEGMENTS, so the
+        writer keeps running indefinitely while disk usage stays bounded.
         Only ever called with a segment that has already rotated out (never
         the one ``ffmpeg`` is still writing), so this can't delete an open file.
         """
-        if not settings.SEGMENT_MAX_ON_DISK:
+        if not settings.MAX_SEGMENTS:
             return
         self._finalized_segments.append(finalized_segment_path)
-        while len(self._finalized_segments) > settings.SEGMENT_MAX_ON_DISK:
+        while len(self._finalized_segments) > settings.MAX_SEGMENTS:
             self._delete_segment(self._finalized_segments.pop(0))
 
     def _notify_segment_finalized(self, finalized_segment_path: str) -> None:
         """Tell the deep analyzer this segment has rotated out and is safe to read."""
         if not settings.DEEP_ANALYZER_ENABLED:
             return
-        from backend.deep_analyzer import get_deep_analyzer
 
         try:
             get_deep_analyzer().on_segment_finalized(finalized_segment_path)

@@ -33,17 +33,18 @@ import logging
 import os
 import queue
 import re
+import tempfile
 import threading
 import time
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
-
+import av
 import numpy as np
 
-from backend import perf_metrics
 from backend.config import settings
+from backend import utils
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,6 @@ def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
     (uniform indices over the total frame count), via PyAV — already a
     project dependency — instead of introducing OpenCV.
     """
-    import av
 
     container = av.open(segment_path)
     try:
@@ -156,14 +156,20 @@ class DeepAnalyzerEngine:
             model_path,
         )
         pipeline_config = None
+        vlm_cache_dir = os.path.join(tempfile.gettempdir(), settings.DEEP_ANALYZER_DEVICE.lower(), "vlm_cache")
+        os.makedirs(vlm_cache_dir, exist_ok=True)
         if str(settings.DEEP_ANALYZER_DEVICE).upper() == "NPU":
             pipeline_config = {
                 "MAX_PROMPT_LEN": settings.DEEP_ANALYZER_NPU_MAX_PROMPT_LEN,
                 "MIN_RESPONSE_LEN": settings.DEEP_ANALYZER_NPU_MIN_RESPONSE_LEN,
+                "CACHE_DIR": vlm_cache_dir,
             }
 
+        _enable_compile_cache = dict()        
+        _enable_compile_cache["CACHE_DIR"] = vlm_cache_dir
+
         if pipeline_config is None:
-            self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE)
+            self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **_enable_compile_cache)
         else:
             self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **pipeline_config)
         self._gen_config = ov_genai.GenerationConfig()
@@ -309,12 +315,12 @@ class DeepAnalyzerEngine:
         texts = getattr(result, "texts", None)
         description = str(texts[0]).strip() if isinstance(texts, (list, tuple)) and texts else str(result).strip()
 
-        metrics = perf_metrics.extract_perf_metrics(result)
-        if perf_metrics.metrics_unavailable(metrics):
-            metrics = perf_metrics.extract_perf_metrics_from_pipe(self._pipe)
-        metrics = perf_metrics.fill_fallback_metrics(metrics, total_duration_ms, description)
+        metrics = utils._extract_perf_metrics(result)
         metrics["total_duration_ms"] = total_duration_ms
         metrics["frames_sampled"] = float(frames.shape[0])
+        metrics["tensor_shape"] = str(frames.shape)
+        metrics["tensor_dtype"] = str(frames.dtype)
+        metrics["segment_path"] = str(job.segment_path)
 
         logger.info(
             "[%s] deep-analysis result segment=%s frame_id=%s: %s",

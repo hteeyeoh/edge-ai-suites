@@ -110,10 +110,10 @@ class Settings:
 
     # Seconds between inferences per stream and the token budget per caption.
     VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
-    VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 100)
+    VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 128)
 
     # VLM NPU-specific configuration. Only used when VLM_DEVICE=NPU.
-    NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 4096)
+    NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 1024)
     NPU_MIN_RESPONSE_LEN = _int("NPU_MIN_RESPONSE_LEN", 512)
 
     # Optional pre-inference frame resize for VLM input. Independent of
@@ -137,17 +137,19 @@ class Settings:
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
 
-    # Testing limits: cap segments written / VLM inferences per stream so a
-    # looping test RTSP source doesn't run (and write to disk) indefinitely.
-    # 0 = unlimited.
+    # Rolling buffer cap: max finalized .mp4 segments retained on disk per
+    # stream. Once a new segment finalizes and pushes the count over this,
+    # the oldest finalized segment (and its frame-registry entries) is
+    # deleted — segments roll forever, the writer never stops on its own.
+    # 0 disables the cap (unbounded, segments accumulate indefinitely).
     MAX_SEGMENTS: int = _int("MAX_SEGMENTS", 20)
-    VLM_MAX_INFERENCES: int = _int("VLM_MAX_INFERENCES", 20)
 
     # Hard cap on finalized segments retained on disk per stream; oldest is
     # deleted once a new segment finalizes and pushes the count over this.
     # 0 disables the cap (unbounded). Retained video per stream is roughly
     # SEGMENT_MAX_ON_DISK * SEGMENT_TIME_SECONDS seconds (default: 50 * 15s = 750s / ~12.5 min).
-    SEGMENT_MAX_ON_DISK: int = _int("SEGMENT_MAX_ON_DISK", 50)
+    SEGMENT_MAX_ON_DISK: int = _int("SEGMENT_MAX_ON_DISK", 5)
+    VLM_MAX_INFERENCES: int = _int("VLM_MAX_INFERENCES", 20)
 
     # ---- Segment writer + frame metadata registry (for deep-analysis handoff) ----
     # Directory where rolling .mp4 segments are written, per stream.
@@ -200,11 +202,7 @@ class Settings:
 
     # Multi-frame confirmation prompt; {event} is substituted with the
     # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
-    DEEP_ANALYZER_PROMPT_TEMPLATE: str = (
-        "Task: These frames are sampled in order from a short video clip. "
-        "Determine whether the event {event} is present. "
-        "Describe what is happening across the frames and justify your conclusion."
-    )
+    DEEP_ANALYZER_PROMPT_TEMPLATE: str = ("Explain the video in detail.")
 
 
 settings = Settings()

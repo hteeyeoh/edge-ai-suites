@@ -128,7 +128,6 @@ services:
       # ---- Testing limits (0 = unlimited) ----
       - MAX_SEGMENTS=${MAX_SEGMENTS:-20}
       - VLM_MAX_INFERENCES=${VLM_MAX_INFERENCES:-20}
-      # ---- Segment writer + frame metadata registry ----
       - SEGMENT_OUTPUT_DIR=${SEGMENT_OUTPUT_DIR:-segments}
       - SEGMENT_TIME_SECONDS=${SEGMENT_TIME_SECONDS:-15}
       - FRAME_SAMPLE_FPS=${FRAME_SAMPLE_FPS:-1}

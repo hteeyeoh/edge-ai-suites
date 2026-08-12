@@ -62,15 +62,20 @@ class SegmentFrameRegistry:
         """Purge every record for a reclaimed segment file. Returns the count removed."""
         with self._lock:
             order = self._stream_order.get(stream_id)
+            if not order:
+                return 0
+            # Scan only this stream's own frame_ids (via _stream_order) instead of
+            # every record across all streams — segment rotation is frequent, so
+            # this keeps the cost proportional to one stream's frame count, not
+            # the whole registry.
             stale = [
                 frame_id
-                for frame_id, record in self._records.items()
-                if record.stream_id == stream_id and record.segment_path == segment_path
+                for frame_id in order
+                if self._records[frame_id].segment_path == segment_path
             ]
             for frame_id in stale:
                 del self._records[frame_id]
-                if order is not None:
-                    order.pop(frame_id, None)
+                order.pop(frame_id, None)
             return len(stale)
 
     def latest(self, stream_id: Optional[str] = None, limit: int = 50) -> List[FrameRecord]:
