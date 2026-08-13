@@ -3,4 +3,5 @@
 .coverage
 ov_models/
 shared/
+segments/
 *__pycache__*

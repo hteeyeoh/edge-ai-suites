@@ -113,15 +113,45 @@ services:
       - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
       - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
       - VLM_FRAME_RESIZE=${VLM_FRAME_RESIZE:-}
+      - SEGMENT_DIM_1_1=${SEGMENT_DIM_1_1:-448x448}
+      - SEGMENT_DIM_4_3=${SEGMENT_DIM_4_3:-512x384}
+      - SEGMENT_DIM_16_9=${SEGMENT_DIM_16_9:-576x320}
       - MAX_STREAMS=${MAX_STREAMS:-8}
+      # ---- Deep analyzer (multi-frame follow-up on a "Yes" alert verdict) ----
+      - DEEP_ANALYZER_ENABLED=${DEEP_ANALYZER_ENABLED:-true}
+      - DEEP_ANALYZER_MODELS_DIR=/models
+      - DEEP_ANALYZER_MODEL=${DEEP_ANALYZER_MODEL:-Qwen3.5-2B-int4-ov}
+      - DEEP_ANALYZER_DEVICE=${DEEP_ANALYZER_DEVICE:-GPU}
+      - DEEP_ANALYZER_MAX_FRAMES=${DEEP_ANALYZER_MAX_FRAMES:-8}
+      - DEEP_ANALYZER_MAX_TOKENS=${DEEP_ANALYZER_MAX_TOKENS:-128}
+      - DEEP_ANALYZER_DEDUP_CACHE_SIZE=${DEEP_ANALYZER_DEDUP_CACHE_SIZE:-500}
+      # ---- Testing limits (0 = unlimited) ----
+      - MAX_SEGMENTS=${MAX_SEGMENTS:-20}
+      - VLM_MAX_INFERENCES=${VLM_MAX_INFERENCES:-20}
+      - SEGMENT_OUTPUT_DIR=${SEGMENT_OUTPUT_DIR:-segments}
+      - SEGMENT_TIME_SECONDS=${SEGMENT_TIME_SECONDS:-15}
+      - FRAME_SAMPLE_FPS=${FRAME_SAMPLE_FPS:-1}
+      # One record per sampled frame; retained history ≈
+      # FRAME_REGISTRY_MAX_RECORDS_PER_STREAM / FRAME_SAMPLE_FPS seconds
+      # (default: 500 / 1fps = 500s / ~8.3 min).
+      - FRAME_REGISTRY_MAX_RECORDS_PER_STREAM=${FRAME_REGISTRY_MAX_RECORDS_PER_STREAM:-500}
+      # Retained video per stream ≈ SEGMENT_MAX_ON_DISK * SEGMENT_TIME_SECONDS
+      # seconds (default: 50 * 15s = 750s / ~12.5 min).
+      - SEGMENT_MAX_ON_DISK=${SEGMENT_MAX_ON_DISK:-50}
     volumes:
       # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
       - "./ov_models:/models:ro"
+      # Rolling .mp4 segments written by the frame registry. Bind-mounted so
+      # segments remain visible to deep-analysis process
+      # reading the same host path. Point HOST_SEGMENTS_DIR at a tmpfs-backed
+      # path (e.g. /dev/shm/...) for in-memory storage, or a real disk path
+      # for persistence across restarts.
+      - "${HOST_SEGMENTS_DIR:-./segments}:/app/segments"
     # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
     # Harmless for CPU inference; requires the host Intel compute runtime.
     devices:
       - "/dev/dri:/dev/dri"
-      - "/dev/accel:/dev/accel"
+      - "${NPU_DEVICE_PATH:-/dev/null}:${NPU_DEVICE_PATH:-/dev/null}"
     group_add:
       - "${RENDER_GROUP_ID:-992}"
     healthcheck:

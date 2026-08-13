@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, List
+from typing import Dict
+from typing import List
 
 from backend.config import settings
+from backend.frame_registry import SegmentFrameRegistry
 from backend.stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
@@ -18,9 +20,10 @@ logger = logging.getLogger(__name__)
 class StreamRegistry:
     """Thread-safe registry that owns the lifecycle of every stream."""
 
-    def __init__(self) -> None:
+    def __init__(self, frame_registry: SegmentFrameRegistry) -> None:
         self._streams: Dict[str, StreamManager] = {}
         self._lock = threading.Lock()
+        self.frame_registry = frame_registry
 
     def add(
         self,
@@ -36,7 +39,13 @@ class StreamRegistry:
                 raise ValueError(f"Stream '{stream_id}' already exists")
             if len(self._streams) >= settings.MAX_STREAMS:
                 raise ValueError(f"Maximum of {settings.MAX_STREAMS} streams reached")
-            manager = StreamManager(stream_id, source_url, vlm_prompt, alert_event)
+            manager = StreamManager(
+                stream_id,
+                source_url,
+                vlm_prompt,
+                alert_event,
+                frame_registry=self.frame_registry,
+            )
             self._streams[stream_id] = manager
         manager.start()
         return manager
