@@ -1,0 +1,21 @@
+{
+    "identities": [
+        {
+            "name": "scene-intelligence",
+            "credentials": [
+                {
+                    "accessKey": "sceneadmin",
+                    "secretKey": "sceneadmin123"
+                }
+            ],
+            "actions": [
+                "Admin",
+                "Read",
+                "Write",
+                "List",
+                "Tagging",
+                "Delete"
+            ]
+        }
+    ]
+}

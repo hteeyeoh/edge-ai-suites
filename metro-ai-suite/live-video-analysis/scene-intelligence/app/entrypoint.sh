@@ -25,6 +25,14 @@ if [ "$(id -u)" = "0" ]; then
         echo "entrypoint: warning: could not chown '${SEGMENT_DIR}' (continuing; segment writing may fail until fixed on the host)" >&2
     fi
 
+    # setpriv changes uid/gid but preserves environment; reset home-related
+    # variables so libraries do not keep trying to write under /root.
+    export HOME=/home/appuser
+    export XDG_CONFIG_HOME="$HOME/.config"
+    export XDG_CACHE_HOME="$HOME/.cache"
+    mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+    chown -R appuser:appuser "$HOME" 2>/dev/null || true
+
     # Drop to appuser for the actual app process. `--keep-groups` would also
     # keep root's own group (gid 0) as a supplementary group on the app
     # process, which we don't want. Instead, explicitly carry over only the
