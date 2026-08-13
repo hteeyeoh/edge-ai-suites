@@ -23,10 +23,11 @@ import re
 import queue
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
+from typing import Optional
 
 import numpy as np
-
+from backend import utils
 from backend.config import settings
 from backend import utils
 logger = logging.getLogger(__name__)
@@ -165,7 +166,6 @@ class VLMEngine:
             )
 
         caption_text = self._extract_caption_text(result)
-        
         return caption_text, metrics
 
     def caption_with_metrics(

@@ -40,9 +40,10 @@ import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
+
 import av
 import numpy as np
-
+from backend import utils
 from backend.config import settings
 from backend import utils
 from backend.object_storage import SeaweedFSStorage
@@ -172,7 +173,7 @@ class DeepAnalyzerEngine:
         _enable_compile_cache["CACHE_DIR"] = vlm_cache_dir
 
         if pipeline_config is None:
-            self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **_enable_compile_cache)
+            self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **{"CACHE_DIR": vlm_cache_dir})
         else:
             self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **pipeline_config)
         self._gen_config = ov_genai.GenerationConfig()

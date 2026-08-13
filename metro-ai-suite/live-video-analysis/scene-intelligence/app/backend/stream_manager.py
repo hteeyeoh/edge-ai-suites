@@ -33,10 +33,10 @@ from pathlib import Path
 from typing import Optional
 
 import av
-
 from backend.config import settings
-from backend.frame_registry import FrameRecord, SegmentFrameRegistry
 from backend.deep_analyzer import get_deep_analyzer
+from backend.frame_registry import FrameRecord
+from backend.frame_registry import SegmentFrameRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -473,7 +473,8 @@ class StreamManager:
         instead of inside the sampler keeps the source socket drained the whole
         time, so inference bursts never stall the relay.
         """
-        from backend.vlm import get_vlm_engine, parse_yes_no
+        from backend.vlm import get_vlm_engine
+        from backend.vlm import parse_yes_no
 
         try:
             engine = get_vlm_engine()
@@ -493,7 +494,6 @@ class StreamManager:
                 time.sleep(0.2)  # nothing new to caption yet
                 continue
             processed_ts = frame_ts
-            # frame = self._maybe_resize_frame_for_vlm(frame)
             logger.info("[%s] VLM inferencing on frame_id=%s", self.stream_id, frame_id)
 
             try:
@@ -545,43 +545,12 @@ class StreamManager:
 
         logger.info("Inference worker exited for stream '%s'", self.stream_id)
 
-    # def _maybe_resize_frame_for_vlm(self, frame):
-    #     """Resize a sampled RGB frame to ``VLM_FRAME_RESIZE`` before captioning, if configured."""
-    #     target = settings.VLM_FRAME_RESIZE
-    #     if target is None:
-    #         return frame
-
-    #     target_w, target_h = map(int, target.split("x"))    
-    #     src_h = getattr(frame, "shape", (0, 0))[0]
-    #     src_w = getattr(frame, "shape", (0, 0))[1]
-    #     if src_w == target_w and src_h == target_h:
-    #         return frame
-
-    #     try:
-    #         resized = (
-    #             av.VideoFrame.from_ndarray(frame, format="rgb24")
-    #             .reformat(width=target_w, height=target_h, format="rgb24", interpolation=_REFORMAT_INTERPOLATION)
-    #             .to_ndarray(format="rgb24")
-    #         )
-    #         return resized
-    #     except Exception as exc:  # noqa: BLE001
-    #         logger.warning(
-    #             "[%s] VLM frame resize %sx%s -> %sx%s failed; using original frame (%s)",
-    #             self.stream_id,
-    #             src_w,
-    #             src_h,
-    #             target_w,
-    #             target_h,
-    #             exc,
-    #         )
-    #         return frame
-
     def _reclaim_old_segments(self, finalized_segment_path: str) -> None:
         """Roll the per-stream segment buffer: drop the oldest once over MAX_SEGMENTS.
 
-        This is what makes MAX_SEGMENTS a rolling buffer rather than a hard
+        This is what makes SEGMENT_MAX_ON_DISK a rolling buffer rather than a hard
         stop — every time a segment finalizes, the oldest surviving segment
-        is deleted once the retained count exceeds MAX_SEGMENTS, so the
+        is deleted once the retained count exceeds SEGMENT_MAX_ON_DISK, so the
         writer keeps running indefinitely while disk usage stays bounded.
         Only ever called with a segment that has already rotated out (never
         the one ``ffmpeg`` is still writing), so this can't delete an open file.

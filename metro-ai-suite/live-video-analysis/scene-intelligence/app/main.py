@@ -15,16 +15,20 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime
+from datetime import timezone
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
-from fastapi.staticfiles import StaticFiles
-
-from backend.config import build_alert_prompt, settings, setup_logging
+from backend.config import build_alert_prompt
+from backend.config import settings
+from backend.config import setup_logging
 from backend.frame_registry import SegmentFrameRegistry
 from backend.registry import StreamRegistry
+from fastapi import FastAPI
+from fastapi import HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 
 setup_logging()
 logger = logging.getLogger(__name__)

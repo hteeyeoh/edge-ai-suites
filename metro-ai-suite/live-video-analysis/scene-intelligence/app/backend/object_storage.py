@@ -11,6 +11,7 @@ import os
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,12 +22,20 @@ logger = logging.getLogger(__name__)
 
 
 class SeaweedFSStorage:
-    """Encapsulates SeaweedFS S3 operations and bucket lifecycle."""
+    """Encapsulates SeaweedFS S3 operations and bucket lifecycle.
+
+    TODO: no retention/expiry policy yet — uploaded segment videos and
+    sidecar JSON accumulate in the bucket forever. Add lifecycle rules
+    (e.g. SeaweedFS TTL/collection settings or a periodic cleanup pass)
+    once storage growth needs to be bounded.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._client = None
         self._bucket_ready = False
+        # Runs the video and sidecar uploads concurrently instead of back-to-back.
+        self._upload_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seaweedfs-upload")
 
         self._client = self._create_client()
         # Pre-create/verify the bucket once during initialization.
@@ -34,6 +43,7 @@ class SeaweedFSStorage:
 
     def _create_client(self):
         import boto3
+        from botocore.config import Config
 
         return boto3.client(
             "s3",
@@ -42,7 +52,13 @@ class SeaweedFSStorage:
             aws_secret_access_key=settings.SEAWEEDFS_SECRET_KEY,
             use_ssl=settings.SEAWEEDFS_USE_SSL,
             verify=settings.SEAWEEDFS_VERIFY_SSL,
+            config=Config(max_pool_connections=settings.SEAWEEDFS_MAX_POOL_CONNECTIONS),
         )
+
+    @staticmethod
+    def _backoff_delay(attempt: int) -> float:
+        delay = settings.SEAWEEDFS_RETRY_DELAY_SECONDS * attempt
+        return min(delay, settings.SEAWEEDFS_MAX_RETRY_DELAY_SECONDS)
 
     def _run_with_retries(self, fn, operation_name: str):
         last_exc = None
@@ -60,7 +76,7 @@ class SeaweedFSStorage:
                     settings.SEAWEEDFS_UPLOAD_RETRIES,
                     exc,
                 )
-                time.sleep(settings.SEAWEEDFS_RETRY_DELAY_SECONDS * attempt)
+                time.sleep(self._backoff_delay(attempt))
         if last_exc is not None:
             raise last_exc
         raise RuntimeError(f"SeaweedFS {operation_name} failed")
@@ -68,7 +84,10 @@ class SeaweedFSStorage:
     @staticmethod
     def _to_s3_metadata_value(value: Any) -> str:
         text = str(value)
-        return " ".join(text.split())
+        # Header-safe metadata values can't contain newlines/tabs; only normalize if present.
+        if any(c in text for c in ("\n", "\r", "\t")):
+            return " ".join(text.split())
+        return text
 
     @staticmethod
     def _is_bucket_missing_error(exc: Exception) -> bool:
@@ -113,7 +132,7 @@ class SeaweedFSStorage:
                         settings.SEAWEEDFS_UPLOAD_RETRIES,
                         exc,
                     )
-                    time.sleep(settings.SEAWEEDFS_RETRY_DELAY_SECONDS * attempt)
+                    time.sleep(self._backoff_delay(attempt))
 
             if missing_bucket:
                 def _create_bucket():
@@ -137,8 +156,7 @@ class SeaweedFSStorage:
             self._bucket_ready = True
 
     def _build_object_keys(self, stream_id: str, segment_path: str, frame_id: uuid.UUID) -> tuple[str, str]:
-        segment_name = Path(segment_path).name
-        base_name = f"{Path(segment_name).stem}-{frame_id}"
+        base_name = f"{Path(segment_path).stem}-{frame_id}"
         root = stream_id
         video_key = f"{root}/{base_name}.mp4"
         sidecar_key = f"{root}/{base_name}.analysis.json"
@@ -183,8 +201,6 @@ class SeaweedFSStorage:
                 },
             )
 
-        self._run_with_retries(_upload_video, "upload_video")
-
         payload = {
             "stream_id": stream_id,
             "frame_id": str(frame_id),
@@ -207,7 +223,10 @@ class SeaweedFSStorage:
                 ContentType="application/json",
             )
 
-        self._run_with_retries(_upload_sidecar, "upload_sidecar")
+        video_future = self._upload_executor.submit(self._run_with_retries, _upload_video, "upload_video")
+        sidecar_future = self._upload_executor.submit(self._run_with_retries, _upload_sidecar, "upload_sidecar")
+        video_future.result()
+        sidecar_future.result()
 
         logger.info(
             "[%s] seaweedfs upload complete bucket=%s key=%s sidecar=%s",

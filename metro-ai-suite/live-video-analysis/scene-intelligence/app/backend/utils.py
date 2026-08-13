@@ -1,8 +1,10 @@
-import openvino_genai as ov_genai
 import logging
+
+import openvino_genai as ov_genai
 
 logger = logging.getLogger(__name__)
 from typing import Optional
+
 
 def _extract_perf_metrics(result: ov_genai.py_openvino_genai.VLMDecodedResults) -> dict[str, Optional[float]]:
     """Read ttft/tpot/throughput straight off GenAI's ``perf_metrics``.
