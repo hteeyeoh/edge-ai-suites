@@ -204,6 +204,18 @@ class Settings:
     # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
     DEEP_ANALYZER_PROMPT_TEMPLATE: str = "Explain the video."
 
+    # ---- SeaweedFS object storage (S3-compatible) ----
+    # Deep-analyzer uploads finalized segment videos and stores
+    # deep-analysis metadata on the uploaded object.
+    SEAWEEDFS_ENDPOINT_URL: str = os.getenv("SEAWEEDFS_ENDPOINT_URL", "http://seaweedfs:8333")
+    SEAWEEDFS_ACCESS_KEY: str = os.getenv("SEAWEEDFS_ACCESS_KEY", "sceneadmin")
+    SEAWEEDFS_SECRET_KEY: str = os.getenv("SEAWEEDFS_SECRET_KEY", "sceneadmin123")
+    SEAWEEDFS_BUCKET: str = os.getenv("SEAWEEDFS_BUCKET", "scene-intelligence")
+    SEAWEEDFS_USE_SSL: bool = _bool("SEAWEEDFS_USE_SSL", False)
+    SEAWEEDFS_VERIFY_SSL: bool = _bool("SEAWEEDFS_VERIFY_SSL", False)
+    SEAWEEDFS_UPLOAD_RETRIES: int = 3
+    SEAWEEDFS_RETRY_DELAY_SECONDS: float = 1.0
+
 
 settings = Settings()
 

@@ -22,9 +22,9 @@ Flow, driven by :class:`backend.stream_manager.StreamManager`:
    prediction though, so before actually reading the file the worker also
    waits for the *next* segment to appear on disk — proof the muxer has moved
    on and this one's trailer is flushed, regardless of GOP/keyframe timing.
-3. A single background dispatcher thread runs the heavy video-VLM call and
-   logs the resulting description. (Persisting segments to an object store
-   such as SeaweedFS is planned as a follow-up, not implemented here.)
+3. A single background dispatcher thread runs the heavy video-VLM call,
+    logs the resulting description, and hands upload work to the object
+    storage helper when enabled.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ import av
 import numpy as np
 from backend import utils
 from backend.config import settings
+from backend.object_storage import SeaweedFSStorage
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,8 @@ class DeepAnalyzerEngine:
             target=self._dispatch_loop, name="deep-analyzer-dispatch", daemon=True
         )
         self._dispatch_thread.start()
+
+        self._object_storage: SeaweedFSStorage = SeaweedFSStorage()
 
     def _load(self) -> None:
         import openvino_genai as ov_genai
@@ -332,6 +335,18 @@ class DeepAnalyzerEngine:
             job.frame_id,
             metrics,
         )
+
+        if self._object_storage is not None:
+            self._object_storage.upload_segment_and_metadata(
+                stream_id=job.stream_id,
+                segment_path=job.segment_path,
+                alert_event=job.alert_event,
+                frame_id=job.frame_id,
+                description=description,
+                metrics=metrics,
+                deep_model=settings.DEEP_ANALYZER_MODEL,
+                deep_device=settings.DEEP_ANALYZER_DEVICE,
+            )
 
 
 _engine: Optional[DeepAnalyzerEngine] = None
