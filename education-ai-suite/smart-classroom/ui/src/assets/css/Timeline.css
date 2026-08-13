@@ -29,6 +29,7 @@
 }
 
 .timeline-accordion .timeline-segment {
+  height: 18px;
   border-radius: 2px;
 }
 

@@ -113,7 +113,7 @@ network:
 | `_publish_timer` | Absolute-deadline scheduler; no drift accumulation | Guarantees ≤ cap; skips ticks where `_latest` was not refreshed since last publish |
 | `publish()` | No rate gate — just adds `bridge_ts_ns`, `orjson.dumps`, paho publish | Timer owns the rate |
 | paho publish → network thread | Non-blocking enqueue | Rarely the limit on loopback |
-| mosquitto broker | Sustains many kHz on loopback | Never the binding constraint at the caps this sweep reaches |
+| mosquitto broker | Sustains many kHz on loopback | Verified independently by `--sweep` mode |
 | subscriber fan-out | Bounded by subscriber's paho thread | Watch the **rate CV** metric for uneven delivery |
 
 The distinctive signature of the gRPC ceiling in `--bridge-sweep` output is
@@ -168,13 +168,46 @@ The benchmark compares the observed rate for `attitude`, `velocity`, and
 its cap, it prints a warning pointing to the relevant `RATE_*_HZ` environment
 variable in `companion-bridge`.
 
-### Bridge stress sweep (`--bridge-sweep`)
+### Broker stress sweep (`--sweep`)
 
 Passive observation only tells you what the bridge is currently configured
-to emit — not what the pipeline can *sustain*.  The bridge sweep answers
-that by exercising the **full pipeline** — PX4 → MAVSDK → companion-bridge
-→ MQTT — because that is what actually bounds telemetry throughput in
-production.
+to emit — not what the transport can *sustain*.  The broker stress sweep
+answers the second question with a synthetic publisher/subscriber loop that
+does not require PX4.
+
+For each rate in `--sweep-rates` (default `10,25,50,100,200,500` Hz):
+
+1. A dedicated publisher connects to the broker and pushes JSON messages
+   stamped with `bridge_ts_ns` at exactly that Hz for `--sweep-duration`
+   seconds.  The scheduler is absolute-deadline (`start + i·1/Hz`) with a
+   sub-millisecond spin at each deadline, so the emit rate does not drift
+   at high frequencies.
+2. A subscriber on the same broker counts arrivals, computes end-to-end
+   latency from `bridge_ts_ns`, and records inter-arrival jitter.
+3. After the window a short drain sleep (max 500 ms) lets in-flight
+   messages arrive before the tier ends.
+
+```mermaid
+flowchart LR
+    subgraph tier["For each Hz tier"]
+        P["Publisher<br/>abs-deadline loop<br/>stamps bridge_ts_ns"]
+        S["Subscriber<br/>counts + latencies"]
+    end
+    P -->|uav/&lt;id&gt;/telemetry/stress| B((MQTT broker))
+    B --> S
+    S --> R[["Report:<br/>published, received,<br/>drop %, eff. Hz,<br/>avg/P99 latency, jitter"]]
+```
+
+The knee — where `drop %` climbs above 2 % or latency / jitter degrade
+sharply — is the broker's saturation point on the current host.  It is
+independent of the bridge's software rate caps and therefore describes the
+transport headroom available for future rate increases.
+
+### Bridge stress sweep (`--bridge-sweep`)
+
+The broker sweep exercises only the transport.  The bridge sweep exercises
+the **full pipeline** — PX4 → MAVSDK → companion-bridge → MQTT — because
+that is what actually bounds telemetry throughput in production.
 
 The bridge reads its per-topic outbound rate caps (`RATE_ATTITUDE_HZ`,
 `RATE_VELOCITY_HZ`, `RATE_POSITION_HZ`, `RATE_GPS_HZ`) and its MAVSDK
@@ -217,9 +250,11 @@ change-triggered and has no `RATE_STATUS_HZ` env var.
 - **Sanity clamp (-5 s … +60 s).** Rejects obviously stale or negative samples
   caused by clock skew between containers, keeping statistics meaningful even
   when clocks are not perfectly synchronised.
-- **Stress the pipeline as deployed.** `--bridge-sweep` drives the real
-  PX4 → MAVSDK → bridge → MQTT path rather than a synthetic publisher, so
-  a measured ceiling is one that production traffic will actually hit.
+- **Two separate stress modes.** `--sweep` isolates the broker (no PX4
+  needed, useful for tuning `mosquitto.conf` or comparing brokers) while
+  `--bridge-sweep` measures the pipeline as deployed.  Running both against
+  the same broker localises whether a bottleneck lives in the transport or
+  in the bridge process itself.
 - **Guaranteed restore of bridge defaults.** The `--bridge-sweep` `finally`
   block runs even on Ctrl-C, so an interrupted sweep does not leak a
   stress-configured bridge into subsequent test runs.
@@ -234,6 +269,7 @@ summary:
 | Mode | Command | Requires |
 |---|---|---|
 | Passive telemetry observation | `make bench` | Stack running |
+| Broker stress sweep (synthetic) | `make bench-sweep` | Broker only |
 | End-to-end bridge stress sweep | `make bench-bridge-sweep` | Stack running + UAV armed + `docker compose` |
 
 ---
@@ -263,6 +299,23 @@ All targets assume `make deps` has been run once to populate `.venv/`.
 ```bash
 make bench                                     # 20 s window, 1 subscriber
 make bench ARGS="--duration 60 --clients 4"    # 60 s, fan-out to 4 subscribers
+```
+
+### Broker stress sweep (`--sweep`)
+
+Requires only the MQTT broker (`docker compose up -d mosquitto`).  PX4 does
+not need to be running.
+
+```bash
+make bench-sweep                                                   # 10,25,50,100,200,500 Hz, 10 s per tier
+make bench-sweep SWEEP_RATES="50,100,250,500,1000" SWEEP_DURATION=15
+```
+
+Direct invocation:
+
+```bash
+.venv/bin/python benchmarks/benchmark_mavlink_mqtt.py \
+    --sweep --sweep-rates 10,50,100,500 --sweep-duration 10
 ```
 
 ### Bridge stress sweep (`--bridge-sweep`)
@@ -299,17 +352,17 @@ directory as `mavlink_mqtt_benchmark_<UTC timestamp>.html`:
 ```bash
 # timestamped file in the current directory
 .venv/bin/python benchmarks/benchmark_mavlink_mqtt.py \
-    --client-sweep --bridge-sweep \
+    --client-sweep --bridge-sweep --sweep \
     --sweep-rates 20,50,100,200 \
     --client-sweep-counts 1,2,5,10,25,50,100 \
     --html-report
 
 # or pick the path explicitly
 .venv/bin/python benchmarks/benchmark_mavlink_mqtt.py \
-    --bridge-sweep --html-report /tmp/bench.html
+    --sweep --html-report /tmp/bench.html
 ```
 
-The report has three top-level cards and two plot sections:
+The report has three top-level cards and three plot sections:
 
 | Header card | Contents |
 |---|---|
@@ -321,12 +374,13 @@ The report has three top-level cards and two plot sections:
 |---|---|---|
 | Client scaling | Subscriber count (1 → 100) | Per-client mean rate, aggregate rate, rate CV, avg latency, P99 latency |
 | Bridge stress sweep | Requested cap (Hz) | Observed Hz (with `y = x`), achieved %, avg latency, P99 latency — each plotted per topic |
+| MQTT broker sweep | Requested rate (Hz) | Effective rate (with `y = x`), drop %, avg latency, P99 latency, jitter |
 
 Every plot has a **Metric** dropdown above it that switches the Y axis
 without a page reload — the raw records are inlined into the page and the
 Chart.js instance is rebuilt client-side on change.  The initial metric
-matches the summary each mode is best known for (per-client mean rate and
-observed Hz respectively).
+matches the summary each mode is best known for (per-client mean rate,
+observed Hz, effective rate respectively).
 
 Each plot is followed by its raw-data table.
 

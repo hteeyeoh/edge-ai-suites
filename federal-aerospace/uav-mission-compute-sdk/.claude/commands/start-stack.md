@@ -11,8 +11,17 @@ Start the full UAV infrastructure and sample applications.
 - `sim` (default): Gazebo 3-camera bridge (`make up-sim-camera`)
 - `usb`: USB camera bridge (`make up-usb-camera`)
 
-When using `usb` mode, the `.env` is updated automatically by `make up-usb-camera`.
-When using `sim` mode, the `.env` is updated automatically by `make up-sim-camera`.
+When using `usb` mode, set in `.env` first:
+```env
+USB_VIDEO_DEVICE=/dev/video32
+USB_CAMERA_ID=nadir
+VISION_CAMERA_IDS=nadir
+```
+
+When using `sim` mode, set in `.env`:
+```env
+VISION_CAMERA_IDS=nadir,forward,rear
+```
 
 ## Start Order (dependencies matter)
 
@@ -23,14 +32,16 @@ make up-sim-camera
 
 # USB mode
 make up-usb-camera
-
-# Lean variants — omit Grafana/InfluxDB/metrics-manager (~300 MB RAM saved)
-make up-sim-camera-lean
-make up-usb-camera-lean
 ```
-This starts: mosquitto -> mediamtx -> px4 -> companion-bridge + one camera bridge + observability (lean skips observability)
+This starts: mosquitto -> mediamtx -> px4 -> companion-bridge + one camera bridge + observability
 
-### Step 2: Verify bridges connected
+### Step 2: Wait for PX4 to become healthy (~60-90 seconds)
+```bash
+docker compose ps px4
+```
+Wait until status shows "(healthy)". The bridges depend on this.
+
+### Step 3: Verify bridges connected
 ```bash
 docker logs companion-bridge --tail 3
 

@@ -31,7 +31,9 @@ if [[ ! -f "$MONITORS" ]]; then
 fi
 
 # 2. Register bundled use cases with multilevel-video-understanding before the MCP
-#    server loads their declarations from config.yaml.
+#    server loads their declarations from config.yaml. Unlike start.sh (which hard
+#    `exit 1`s), tolerate transient unreadiness: compose `depends_on` waits for the
+#    service to be healthy, but retry as a backstop and never block startup on it.
 SUMMARY_URL="$(node --input-type=module -e '
   import { readFileSync } from "node:fs";
   import { parse } from "yaml";

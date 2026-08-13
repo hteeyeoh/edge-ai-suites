@@ -94,6 +94,7 @@ VISION_CAMERA_IDS=nadir,forward,rear
 cd ~/edge-ai-suites/federal-aerospace/uav-mission-compute-sdk
 make init                    # Set passwords in .env
 make up-sim-camera                      # Start PX4 + Gazebo + camera-bridge
+docker compose ps            # Wait for px4 (healthy) ~90s
 make apps                    # Start vision processor + dashboard
 ```
 
@@ -229,7 +230,10 @@ nano .env
 # 3. Start core infrastructure with USB camera profile
 make up-usb-camera
 
-# 4. Start vision processor + dashboard (1 camera)
+# 4. Wait for PX4 + usb-camera-bridge healthy
+docker compose ps
+
+# 5. Start vision processor + dashboard (1 camera)
 make apps
 ```
 
@@ -237,7 +241,7 @@ make apps
 
 | Component | CPU | GPU | Memory | Notes |
 |-----------|-----|-----|--------|-------|
-| px4-sitl | 150-250% | 40% | 3.8 GB | Sim still runs for telemetry |
+| px4-gazebo | 150-250% | 40% | 3.8 GB | Sim still runs for telemetry |
 | usb-camera-bridge | ~10% | - | 50 MB | 1 ffmpeg process |
 | vision-processor | 15-30% | 25% | 400 MB | 1 GStreamer pipeline |
 | **Total** | **~250%** | **~65%** | **~4.2 GB** | Less resource-intensive |
@@ -268,13 +272,14 @@ cd ~/edge-ai-suites/federal-aerospace/uav-mission-compute-sdk
 # 1. Enumerate USB device
 v4l2-ctl --list-devices
 
-# 2. Update .env with correct USB_VIDEO_DEVICE
+# 2. Update .env
+sed -i 's/VISION_CAMERA_IDS=nadir,forward,rear/VISION_CAMERA_IDS=nadir/' .env
 echo "USB_VIDEO_DEVICE=/dev/video32" >> .env   # Adjust to your device
 
 # 3. Stop all containers
 make down
 
-# 4. Start with USB profile (sets VISION_CAMERA_IDS=nadir automatically)
+# 4. Start with USB profile
 make up-usb-camera
 
 # 5. Restart apps with 1-camera config
@@ -286,25 +291,28 @@ make apps
 ```bash
 cd ~/edge-ai-suites/federal-aerospace/uav-mission-compute-sdk
 
-# 1. Stop all containers
+# 1. Update .env back to 3 cameras
+sed -i 's/VISION_CAMERA_IDS=nadir/VISION_CAMERA_IDS=nadir,forward,rear/' .env
+
+# 2. Stop all containers
 make down
 
-# 2. Start with default sim profile (sets VISION_CAMERA_IDS=nadir,forward,rear automatically)
+# 3. Start with default sim profile
 make up-sim-camera
 
-# 3. Restart apps with 3-camera config
+# 4. Restart apps with 3-camera config
 make apps
 ```
 
 ### Environment Variable Checklist
 
-| Variable | Sim Mode | USB Mode | Set by |
-|----------|----------|----------|--------|
-| `VISION_CAMERA_IDS` | `nadir,forward,rear` | `nadir` | auto (`make up-*`) |
-| `GZ_WORLD` | `baylands_multicam` | `baylands_multicam` | `.env` |
-| `USB_VIDEO_DEVICE` | — | `/dev/video32` (your device) | `.env` manually |
-| `USB_CAMERA_ID` | — | `nadir` | `.env` |
-| `USB_CAPTURE_FORMAT` | — | `mjpeg` or `raw` | `.env` |
+| Variable | Sim Mode | USB Mode |
+|----------|----------|----------|
+| `VISION_CAMERA_IDS` | `nadir,forward,rear` | `nadir` |
+| `GZ_WORLD` | `baylands_multicam` | `baylands_multicam` |
+| `USB_VIDEO_DEVICE` | — | `/dev/video32` (your device) |
+| `USB_CAMERA_ID` | — | `nadir` |
+| `USB_CAPTURE_FORMAT` | — | `mjpeg` or `raw` |
 
 ---
 
@@ -520,11 +528,10 @@ Start here: Which camera source?
       v4l2-ctl --list-devices
    2. Update .env:       2. make up-sim-camera
       USB_VIDEO_DEVICE
-      USB_CAMERA_ID=nadir
+      USB_CAMERA_ID=nadir  3. Wait px4 (healthy)
       VISION_CAMERA_IDS=nadir
    3. make up-usb-camera
-   4. make apps          3. make up-sim-camera
-                         4. make apps
+   4. make apps          4. make apps
 
 Dashboard: http://localhost:5002
 ```

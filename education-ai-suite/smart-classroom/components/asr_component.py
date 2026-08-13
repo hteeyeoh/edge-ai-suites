@@ -7,8 +7,7 @@ import unicodedata
 from utils.config_loader import config
 from utils.storage_manager import StorageManager
 from utils.runtime_config_loader import RuntimeConfig
-from components.asr.diarization.factory import build_diarizer
-from utils.pipeline_modes import resolve_chunking
+from components.asr.diarization.pyannote_diarizer import PyannoteDiarizer
 from model_manager import ModelManager
 import logging
 logger = logging.getLogger(__name__)
@@ -84,10 +83,11 @@ class ASRComponent(PipelineComponent):
         # Get the underlying processor for transcription
         self.asr = self.asr_handler._processor
 
-        # Resolved here so an unsupported combination fails when the pipeline is built.
-        self.chunking = resolve_chunking()
-
-        self.diarizer = build_diarizer() if self.enable_diarization else None
+        self.pyannote_diarizer = None
+        if self.enable_diarization:
+            self.pyannote_diarizer = PyannoteDiarizer(
+                hf_token=config.models.asr.hf_token
+            )
             
     @staticmethod
     def _meaningful_char_count(text: str) -> int:
@@ -186,7 +186,7 @@ class ASRComponent(PipelineComponent):
                 transcribed_lines = []
 
                 if self.enable_diarization and transcription.get("segments"):
-                    speaker_turns = self.diarizer.diarize(chunk_path)
+                    speaker_turns = self.pyannote_diarizer.diarize(chunk_path)
 
                     for sent in transcription["segments"]:
                         if not sent["text"].strip():
@@ -369,8 +369,6 @@ class ASRComponent(PipelineComponent):
                 path=os.path.join(project_path, "performance_metrics.csv"),
                 new_data={
                     "configuration.asr_model": f"{self.asr_handler.provider}/{self.asr_handler.model_name}",
-                    "configuration.chunking": self.chunking,
-                    "configuration.diarization": config.models.diarization.backend if self.enable_diarization else "off",
                     "performance.transcription_time": round(transcription_time, 4)
                 }
             )

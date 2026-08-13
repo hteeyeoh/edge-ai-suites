@@ -176,6 +176,7 @@ const App: React.FC = () => {
       </div>
       {activeScreen === 'grading' && (
         <>
+          <div className="header-bar grading-header-bar" />
           <div className="main-content">
             <GradingScreen />
           </div>

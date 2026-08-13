@@ -26,7 +26,13 @@ if [ ! -f .env ]; then
   make init
 fi
 
-# VISION_CAMERA_IDS is set automatically by make up-sim-camera
+# Ensure vision processor expects all 3 sim cameras
+if grep -q '^VISION_CAMERA_IDS=' .env; then
+  sed -i 's/^VISION_CAMERA_IDS=.*/VISION_CAMERA_IDS=nadir,forward,rear/' .env
+else
+  echo 'VISION_CAMERA_IDS=nadir,forward,rear' >> .env
+fi
+
 make apps-down || true
 make down || true
 make up-sim-camera
@@ -51,7 +57,13 @@ fi
 # Discover USB video devices (informational)
 v4l2-ctl --list-devices || true
 
-# VISION_CAMERA_IDS is set automatically by make up-usb-camera
+# Ensure vision processor expects one camera
+if grep -q '^VISION_CAMERA_IDS=' .env; then
+  sed -i 's/^VISION_CAMERA_IDS=.*/VISION_CAMERA_IDS=nadir/' .env
+else
+  echo 'VISION_CAMERA_IDS=nadir' >> .env
+fi
+
 # Ensure USB defaults exist if missing
 grep -q '^USB_VIDEO_DEVICE=' .env || echo 'USB_VIDEO_DEVICE=/dev/video32' >> .env
 grep -q '^USB_CAMERA_ID=' .env || echo 'USB_CAMERA_ID=nadir' >> .env

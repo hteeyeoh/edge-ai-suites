@@ -180,6 +180,7 @@ const Timeline: React.FC = () => {
                         left: `${left}%`,
                         width: `${width}%`,
                         backgroundColor: color,
+                        height: '13px',
                       }}
                       title={`${label}: ${formatTime(seg.start)} - ${formatTime(seg.end)}\n${seg.text.substring(0, 100)}...`}
                     />

@@ -5,11 +5,6 @@ SPDX-License-Identifier: Apache-2.0
 
 # Real Hardware — PX4 over Ethernet
 
-> **Evaluation Only** — The PX4 simulation deployment over Ethernet
-> (`docker-compose.ethernet.yml`) is provided solely to simplify evaluation.
-> This setup is intended only for validating companion compute capabilities.
-> It is **not intended for production deployments**.
-
 How to replace the local Gazebo simulation with a PX4 flight controller
 running on a separate machine connected over Ethernet.
 
@@ -187,17 +182,17 @@ Base URL: `http://<COMPANION_IP>:8080`
 
 ### Commands
 
-| Method | Endpoint             | Description                          |
-|--------|-----------------------|--------------------------------------|
-| POST   | `/action/arm`        | Arm the UAV                          |
-| POST   | `/action/disarm`     | Disarm the UAV                       |
-| POST   | `/action/takeoff`    | Arm + takeoff (`altitude` in body)   |
-| POST   | `/action/land`       | Land in place                        |
-| POST   | `/action/return`     | Return to launch                     |
+| Method | Endpoint           | Description                          |
+|--------|--------------------|--------------------------------------|
+| POST   | `/command/arm`     | Arm the UAV                        |
+| POST   | `/command/disarm`  | Disarm the UAV                     |
+| POST   | `/command/takeoff` | Arm + takeoff (`?altitude=10.0`)     |
+| POST   | `/command/land`    | Land in place                        |
+| POST   | `/command/return`  | Return to launch                     |
 
 Example:
 ```bash
-curl -X POST http://localhost:8080/action/takeoff
+curl -X POST http://localhost:8080/command/takeoff?altitude=5.0
 ```
 
 ---
