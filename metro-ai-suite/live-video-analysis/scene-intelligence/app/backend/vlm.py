@@ -158,7 +158,6 @@ class VLMEngine:
             )
 
         caption_text = self._extract_caption_text(result)
-
         return caption_text, metrics
 
     def caption_with_metrics(
