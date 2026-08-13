@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, List
+from typing import Dict
+from typing import List
 
 from backend.config import settings
 from backend.frame_registry import SegmentFrameRegistry

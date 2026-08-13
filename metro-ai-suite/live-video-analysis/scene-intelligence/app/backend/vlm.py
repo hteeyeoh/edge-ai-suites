@@ -23,11 +23,11 @@ import queue
 import re
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
+from typing import Optional
 
 import numpy as np
-
-from backend import perf_metrics
+from backend import utils
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -150,20 +150,15 @@ class VLMEngine:
         )
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-        metrics = perf_metrics.extract_perf_metrics(result)
-        if perf_metrics.metrics_unavailable(metrics):
-            metrics = perf_metrics.extract_perf_metrics_from_pipe(self._pipe)
-
-        if not self._metrics_debug_logged and perf_metrics.metrics_unavailable(metrics):
+        metrics = utils._extract_perf_metrics(result)
+        if metrics.get("ttft_ms") is None and not self._metrics_debug_logged:
             self._metrics_debug_logged = True
             logger.warning(
-                "VLM metrics unavailable from current runtime API | result_attrs=%s | pipe_attrs=%s",
-                perf_metrics.debug_attr_names(result),
-                perf_metrics.debug_attr_names(self._pipe),
+                "VLM result has no usable perf_metrics; falling back to estimated metrics"
             )
 
         caption_text = self._extract_caption_text(result)
-        metrics = perf_metrics.fill_fallback_metrics(metrics, elapsed_ms, caption_text)
+
         return caption_text, metrics
 
     def caption_with_metrics(
