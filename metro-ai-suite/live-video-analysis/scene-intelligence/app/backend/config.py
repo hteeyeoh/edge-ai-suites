@@ -218,6 +218,12 @@ class Settings:
     SEAWEEDFS_MAX_RETRY_DELAY_SECONDS: float = _float("SEAWEEDFS_MAX_RETRY_DELAY_SECONDS", 2.0)
     SEAWEEDFS_MAX_POOL_CONNECTIONS: int = _int("SEAWEEDFS_MAX_POOL_CONNECTIONS", 20)
 
+    # ---- Alert index (in-memory, per-stream audit log of uploaded alerts) ----
+    # Bounded per-stream history kept in memory; oldest entries are dropped
+    # once exceeded. Rehydrated from SeaweedFS (analysis.json sidecars) on
+    # first access per stream, since the index itself isn't persisted.
+    ALERT_INDEX_MAX_PER_STREAM: int = _int("ALERT_INDEX_MAX_PER_STREAM", 200)
+
 
 settings = Settings()
 

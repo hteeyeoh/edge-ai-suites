@@ -173,10 +173,11 @@ class SeaweedFSStorage:
         metrics: dict[str, Any],
         deep_model: str,
         deep_device: str,
-    ) -> None:
+        trigger_caption: str = "",
+    ) -> dict[str, Any] | None:
         if not os.path.isfile(segment_path):
             logger.warning("[%s] seaweedfs upload skipped; segment not found: %s", stream_id, segment_path)
-            return
+            return None
 
         video_key, sidecar_key = self._build_object_keys(stream_id, segment_path, frame_id)
         metadata = {
@@ -206,12 +207,14 @@ class SeaweedFSStorage:
             "frame_id": str(frame_id),
             "segment_path": segment_path,
             "alert_event": alert_event,
+            "trigger_caption": trigger_caption,
             "description": description,
             "metrics": metrics,
             "model": deep_model,
             "device": deep_device,
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "video_object_key": video_key,
+            "sidecar_key": sidecar_key,
         }
         sidecar_body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
 
@@ -235,3 +238,4 @@ class SeaweedFSStorage:
             video_key,
             sidecar_key,
         )
+        return payload

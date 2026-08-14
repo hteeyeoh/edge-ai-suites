@@ -91,6 +91,46 @@
         </section>
     </main>
 
+    <div id="alert-drawer" class="alert-drawer alert-drawer--hidden" aria-hidden="true">
+        <div class="alert-drawer__backdrop" data-close="alert-drawer"></div>
+        <aside class="alert-drawer__panel" role="dialog" aria-modal="true" aria-labelledby="alert-drawer-title">
+            <div class="alert-drawer__header">
+                <h3 id="alert-drawer-title">Alerts — <span id="alert-drawer-stream"></span></h3>
+                <button id="alert-drawer-close" class="alert-drawer__close" type="button"
+                    aria-label="Close alert history">&times;</button>
+            </div>
+            <ul id="alert-drawer-list" class="alert-drawer__list"></ul>
+            <p id="alert-drawer-status" class="alert-drawer__status">Loading alerts...</p>
+            <button id="alert-drawer-more" class="alert-drawer__more" type="button" hidden>Load more</button>
+        </aside>
+    </div>
+
+    <div id="alert-modal" class="alert-modal alert-modal--hidden" aria-hidden="true">
+        <div class="alert-modal__backdrop" data-close="alert-modal"></div>
+        <div class="alert-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="alert-modal-title">
+            <div class="alert-modal__header">
+                <h3 id="alert-modal-title">Alert details</h3>
+                <button id="alert-modal-close" class="alert-modal__close" type="button"
+                    aria-label="Close alert details">&times;</button>
+            </div>
+            <div class="alert-modal__content">
+                <div class="alert-modal__video-wrap">
+                    <video id="alert-modal-video" class="alert-modal__video" controls playsinline
+                        preload="metadata"></video>
+                </div>
+                <aside class="alert-modal__side">
+                    <h4>Metadata</h4>
+                    <dl id="alert-modal-meta" class="alert-modal__meta"></dl>
+                </aside>
+            </div>
+            <div class="alert-modal__summary">
+                <h4>Deep analyzer summary</h4>
+                <p id="alert-modal-summary">No summary yet.</p>
+            </div>
+            <p id="alert-modal-status" class="alert-modal__status">Loading alert...</p>
+        </div>
+    </div>
+
     <script src="/runtime-config.js"></script>
     <script src="/static/js/app.js"></script>
 </body>

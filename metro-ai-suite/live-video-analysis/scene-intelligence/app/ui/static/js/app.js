@@ -15,6 +15,23 @@ const settingsPanel = document.getElementById("settings-panel");
 const settingsVlmModel = document.getElementById("settings-vlm-model");
 const settingsVlmDevice = document.getElementById("settings-vlm-device");
 
+const alertDrawer = document.getElementById("alert-drawer");
+const alertDrawerStream = document.getElementById("alert-drawer-stream");
+const alertDrawerList = document.getElementById("alert-drawer-list");
+const alertDrawerStatus = document.getElementById("alert-drawer-status");
+const alertDrawerMore = document.getElementById("alert-drawer-more");
+const alertDrawerClose = document.getElementById("alert-drawer-close");
+
+const alertModal = document.getElementById("alert-modal");
+const alertModalVideo = document.getElementById("alert-modal-video");
+const alertModalMeta = document.getElementById("alert-modal-meta");
+const alertModalSummary = document.getElementById("alert-modal-summary");
+const alertModalStatus = document.getElementById("alert-modal-status");
+const alertModalClose = document.getElementById("alert-modal-close");
+
+const ALERT_PAGE_SIZE = 20;
+let alertDrawerState = { streamId: null, offset: 0, total: 0 };
+
 const metricsConnection = document.getElementById("metrics-connection");
 const cpuVal = document.getElementById("cpu-val");
 const ramVal = document.getElementById("ram-val");
@@ -236,6 +253,137 @@ function removeCard(streamId) {
     updateStatusFromPlayers();
 }
 
+function closeAlertModal() {
+    if (!alertModal) return;
+    alertModal.classList.add("alert-modal--hidden");
+    alertModal.setAttribute("aria-hidden", "true");
+    if (alertModalVideo) {
+        alertModalVideo.pause();
+        alertModalVideo.removeAttribute("src");
+        alertModalVideo.load();
+    }
+}
+
+async function openAlertDetail(streamId, frameId) {
+    if (!alertModal) return;
+    alertModal.classList.remove("alert-modal--hidden");
+    alertModal.setAttribute("aria-hidden", "false");
+    if (alertModalStatus) alertModalStatus.textContent = "Loading alert...";
+    if (alertModalSummary) alertModalSummary.textContent = "No summary yet.";
+    if (alertModalMeta) alertModalMeta.innerHTML = "";
+
+    try {
+        const resp = await fetch(`/streams/${encodeURIComponent(streamId)}/alerts/${encodeURIComponent(frameId)}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        if (alertModalVideo && data.video_url) {
+            alertModalVideo.src = data.video_url;
+            alertModalVideo.load();
+        }
+
+        const entries = [
+            ["Stream", data.stream_id || streamId],
+            ["Alert", data.alert_event || "-"],
+            ["Caption", data.trigger_caption || "-"],
+            ["Uploaded", data.uploaded_at ? new Date(data.uploaded_at).toLocaleString() : "-"],
+            ["Model", data.model || "-"],
+            ["Device", data.device || "-"],
+            ["Frame", data.frame_id || "-"],
+        ];
+        if (alertModalMeta) {
+            entries.forEach(([key, value]) => {
+                const row = document.createElement("div");
+                row.className = "alert-modal__meta-row";
+                const term = document.createElement("dt");
+                term.textContent = key;
+                const definition = document.createElement("dd");
+                definition.textContent = String(value || "-");
+                row.appendChild(term);
+                row.appendChild(definition);
+                alertModalMeta.appendChild(row);
+            });
+        }
+        if (alertModalSummary) {
+            alertModalSummary.textContent = data.description || "No deep analyzer summary available yet.";
+        }
+        if (alertModalStatus) alertModalStatus.textContent = "";
+    } catch (_err) {
+        if (alertModalStatus) {
+            alertModalStatus.textContent = "Failed to load this alert. It may still be processing.";
+        }
+    }
+}
+
+function renderAlertRows(alerts, streamId) {
+    alerts.forEach((alert) => {
+        const li = document.createElement("li");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "alert-drawer__row";
+        const time = alert.uploaded_at ? new Date(alert.uploaded_at).toLocaleString() : "Unknown time";
+        const timeText = document.createElement("span");
+        timeText.className = "alert-drawer__row-time";
+        timeText.textContent = time;
+        const eventText = document.createElement("span");
+        eventText.className = "alert-drawer__row-event";
+        eventText.textContent = alert.alert_event || "Alert";
+        const captionText = document.createElement("span");
+        captionText.className = "alert-drawer__row-caption";
+        captionText.textContent = alert.trigger_caption || "";
+        button.appendChild(timeText);
+        button.appendChild(eventText);
+        button.appendChild(captionText);
+        button.addEventListener("click", () => openAlertDetail(streamId, alert.frame_id));
+        li.appendChild(button);
+        alertDrawerList.appendChild(li);
+    });
+}
+
+async function loadAlertPage(streamId) {
+    const resp = await fetch(
+        `/streams/${encodeURIComponent(streamId)}/alerts?limit=${ALERT_PAGE_SIZE}&offset=${alertDrawerState.offset}`
+    );
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const alerts = Array.isArray(data.alerts) ? data.alerts : [];
+    alertDrawerState.total = Number(data.total) || 0;
+    alertDrawerState.offset += alerts.length;
+
+    renderAlertRows(alerts, streamId);
+
+    if (alertDrawerState.offset === 0) {
+        alertDrawerStatus.textContent = "No alerts recorded yet for this stream.";
+    } else {
+        alertDrawerStatus.textContent = "";
+    }
+    alertDrawerMore.hidden = alertDrawerState.offset >= alertDrawerState.total;
+}
+
+function closeAlertDrawer() {
+    if (!alertDrawer) return;
+    alertDrawer.classList.add("alert-drawer--hidden");
+    alertDrawer.setAttribute("aria-hidden", "true");
+    alertDrawerState = { streamId: null, offset: 0, total: 0 };
+}
+
+async function openAlertDrawer(streamId) {
+    if (!alertDrawer) return;
+    alertDrawer.classList.remove("alert-drawer--hidden");
+    alertDrawer.setAttribute("aria-hidden", "false");
+    alertDrawerStream.textContent = streamId;
+    alertDrawerList.innerHTML = "";
+    alertDrawerMore.hidden = true;
+    alertDrawerStatus.textContent = "Loading alerts...";
+    alertDrawerState = { streamId, offset: 0, total: 0 };
+
+    try {
+        await loadAlertPage(streamId);
+    } catch (_err) {
+        alertDrawerStatus.textContent = "Unable to load alert history.";
+    }
+}
+
 async function stopStream(streamId, button) {
     button.disabled = true;
     try {
@@ -278,6 +426,12 @@ function createCard(stream) {
     const actions = document.createElement("div");
     actions.className = "stream-actions";
 
+    const alertBell = document.createElement("button");
+    alertBell.className = "stream-alert-bell";
+    alertBell.type = "button";
+    alertBell.innerHTML = '\uD83D\uDD14<span class="stream-alert-bell__badge" hidden>0</span>';
+    alertBell.setAttribute("aria-label", "View alert history");
+
     const infoButton = document.createElement("button");
     infoButton.className = "stream-info-btn";
     infoButton.type = "button";
@@ -300,10 +454,6 @@ function createCard(stream) {
     overlay.className = "stream-overlay";
     overlay.textContent = "Waiting for publisher...";
 
-    const caption = document.createElement("p");
-    caption.className = "stream-caption";
-    caption.textContent = "Awaiting incoming alert...";
-
     const vlmMetrics = document.createElement("div");
     vlmMetrics.className = "stream-vlm-metrics";
     vlmMetrics.textContent = "TTFT: - ms | TPOT: - ms | Throughput: - tok/s";
@@ -311,6 +461,7 @@ function createCard(stream) {
     frame.appendChild(video);
     frame.appendChild(overlay);
     head.appendChild(idText);
+    actions.appendChild(alertBell);
     actions.appendChild(infoButton);
     actions.appendChild(stopButton);
     head.appendChild(actions);
@@ -319,7 +470,6 @@ function createCard(stream) {
     card.appendChild(alertDetails);
     card.appendChild(frame);
     card.appendChild(vlmMetrics);
-    card.appendChild(caption);
     streamsGrid.appendChild(card);
 
     const player = {
@@ -329,9 +479,11 @@ function createCard(stream) {
         overlay,
         meta,
         alertDetails,
+        alertBell,
+        alertCountSeen: null,
+        alertPulseTimeout: null,
         infoButton,
         vlmMetrics,
-        caption,
         stopButton,
         playback: null,
         connecting: false,
@@ -350,6 +502,14 @@ function createCard(stream) {
         player.alertDetails.classList.toggle("stream-alert-details--hidden", !willShow);
         infoButton.classList.toggle("stream-info-btn--active", willShow);
         infoButton.setAttribute("aria-expanded", String(willShow));
+    });
+    alertBell.addEventListener("click", () => {
+        alertBell.classList.remove("stream-alert-bell--pulse");
+        if (player.alertPulseTimeout) {
+            clearTimeout(player.alertPulseTimeout);
+            player.alertPulseTimeout = null;
+        }
+        openAlertDrawer(stream.stream_id);
     });
 
     return player;
@@ -401,15 +561,31 @@ function syncPlayerCard(player, stream) {
             player.infoButton.setAttribute("aria-expanded", "false");
         }
     }
-    if (player.caption) {
-        player.caption.textContent = stream.caption || "Awaiting incoming alert...";
-        player.caption.classList.toggle("stream-caption--active", Boolean(stream.caption));
-        const alertDetected = isAlertDetected(stream.caption);
-        player.card.classList.toggle("stream-card--alert", alertDetected);
-        player.caption.classList.toggle("stream-caption--alert", alertDetected);
-    }
+    const alertDetected = isAlertDetected(stream.caption);
+    player.card.classList.toggle("stream-card--alert", alertDetected);
     if (player.vlmMetrics) {
         player.vlmMetrics.textContent = formatVlmMetrics(stream);
+    }
+    if (player.alertBell) {
+        const count = Number(stream.alert_count) || 0;
+        const badge = player.alertBell.querySelector(".stream-alert-bell__badge");
+        player.alertBell.classList.toggle("stream-alert-bell--visible", count > 0);
+        if (badge) {
+            badge.hidden = count === 0;
+            badge.textContent = count > 99 ? "99+" : String(count);
+        }
+        // Only pulse for a genuine increase after the baseline is known, not on first load.
+        if (player.alertCountSeen !== null && count > player.alertCountSeen) {
+            player.alertBell.classList.remove("stream-alert-bell--pulse");
+            void player.alertBell.offsetWidth; // restart animation if already pulsing
+            player.alertBell.classList.add("stream-alert-bell--pulse");
+            if (player.alertPulseTimeout) clearTimeout(player.alertPulseTimeout);
+            player.alertPulseTimeout = setTimeout(() => {
+                player.alertBell.classList.remove("stream-alert-bell--pulse");
+                player.alertPulseTimeout = null;
+            }, 2400);
+        }
+        player.alertCountSeen = count;
     }
     if (stream.publishing) {
         if (!player.playback) {
@@ -719,6 +895,39 @@ window.addEventListener("beforeunload", () => {
     }
     if (metricsSource) {
         metricsSource.close();
+    }
+});
+
+if (alertDrawerClose) alertDrawerClose.addEventListener("click", closeAlertDrawer);
+if (alertDrawer) {
+    alertDrawer.addEventListener("click", (event) => {
+        if (event.target?.dataset?.close === "alert-drawer") closeAlertDrawer();
+    });
+}
+if (alertDrawerMore) {
+    alertDrawerMore.addEventListener("click", async () => {
+        if (!alertDrawerState.streamId) return;
+        try {
+            await loadAlertPage(alertDrawerState.streamId);
+        } catch (_err) {
+            alertDrawerStatus.textContent = "Unable to load more alerts.";
+        }
+    });
+}
+if (alertModalClose) alertModalClose.addEventListener("click", closeAlertModal);
+if (alertModal) {
+    alertModal.addEventListener("click", (event) => {
+        if (event.target?.dataset?.close === "alert-modal") closeAlertModal();
+    });
+}
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (alertModal && !alertModal.classList.contains("alert-modal--hidden")) {
+        closeAlertModal();
+        return;
+    }
+    if (alertDrawer && !alertDrawer.classList.contains("alert-drawer--hidden")) {
+        closeAlertDrawer();
     }
 });
 

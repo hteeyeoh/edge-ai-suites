@@ -526,7 +526,7 @@ class StreamManager:
                     from backend.deep_analyzer import get_deep_analyzer
 
                     try:
-                        get_deep_analyzer().submit(self.stream_id, segment_path, self.alert_event, frame_id)
+                        get_deep_analyzer().submit(self.stream_id, segment_path, self.alert_event, frame_id, caption)
                     except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured
                         logger.error("[%s] deep analyzer disabled: %s", self.stream_id, exc)
                 else:

@@ -44,6 +44,7 @@ from typing import Optional
 import av
 import numpy as np
 from backend import utils
+from backend.alert_index import get_alert_index
 from backend.config import settings
 from backend.object_storage import SeaweedFSStorage
 
@@ -76,6 +77,7 @@ class _AnalysisJob:
     segment_path: str
     alert_event: str
     frame_id: uuid.UUID
+    trigger_caption: str = ""
 
 
 def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
@@ -189,9 +191,16 @@ class DeepAnalyzerEngine:
     # Public API
     # ------------------------------------------------------------------ #
 
-    def submit(self, stream_id: str, segment_path: str, alert_event: str, frame_id: uuid.UUID) -> None:
+    def submit(
+        self,
+        stream_id: str,
+        segment_path: str,
+        alert_event: str,
+        frame_id: uuid.UUID,
+        trigger_caption: str = "",
+    ) -> None:
         """Register a "Yes"-verdict segment for deep analysis, at most once."""
-        job = _AnalysisJob(stream_id, segment_path, alert_event, frame_id)
+        job = _AnalysisJob(stream_id, segment_path, alert_event, frame_id, trigger_caption)
         with self._lock:
             if segment_path in self._dedup:
                 return  # already queued/pending/done — don't waste compute
@@ -337,16 +346,18 @@ class DeepAnalyzerEngine:
         )
 
         if self._object_storage is not None:
-            self._object_storage.upload_segment_and_metadata(
+            payload = self._object_storage.upload_segment_and_metadata(
                 stream_id=job.stream_id,
                 segment_path=job.segment_path,
                 alert_event=job.alert_event,
                 frame_id=job.frame_id,
+                trigger_caption=job.trigger_caption,
                 description=description,
                 metrics=metrics,
                 deep_model=settings.DEEP_ANALYZER_MODEL,
                 deep_device=settings.DEEP_ANALYZER_DEVICE,
             )
+            get_alert_index().add(payload)
 
 
 _engine: Optional[DeepAnalyzerEngine] = None

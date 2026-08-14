@@ -21,10 +21,12 @@ from datetime import timezone
 from backend.config import build_alert_prompt
 from backend.config import settings
 from backend.config import setup_logging
+from backend.alert_index import get_alert_index
 from backend.frame_registry import SegmentFrameRegistry
 from backend.registry import StreamRegistry
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.responses import Response
@@ -36,8 +38,24 @@ logger = logging.getLogger(__name__)
 _startup_time = time.monotonic()
 frame_registry = SegmentFrameRegistry(max_records_per_stream=settings.FRAME_REGISTRY_MAX_RECORDS_PER_STREAM)
 registry = StreamRegistry(frame_registry)
+alert_index = get_alert_index()
 
 _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
+
+
+def _get_alert_s3_client():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=settings.SEAWEEDFS_ENDPOINT_URL,
+        aws_access_key_id=settings.SEAWEEDFS_ACCESS_KEY,
+        aws_secret_access_key=settings.SEAWEEDFS_SECRET_KEY,
+        use_ssl=settings.SEAWEEDFS_USE_SSL,
+        verify=settings.SEAWEEDFS_VERIFY_SSL,
+        config=Config(max_pool_connections=settings.SEAWEEDFS_MAX_POOL_CONNECTIONS),
+    )
 
 
 @asynccontextmanager
@@ -129,6 +147,7 @@ async def list_streams():
                 "ttft_ms": h.ttft_ms,
                 "tpot_ms": h.tpot_ms,
                 "throughput_tps": h.throughput_tps,
+                "alert_count": alert_index.count(manager.stream_id),
             }
         )
     return {"streams": result}
@@ -169,6 +188,62 @@ async def delete_stream(stream_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Stream '{stream_id}' not found")
     return {"status": "removed", "stream_id": stream_id}
+
+
+# ---------------------------------------------------------------------------
+# Alert audit log (SeaweedFS-backed history of confirmed alert events)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/streams/{stream_id}/alerts", tags=["Alerts"])
+async def list_alerts(
+    stream_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    records, total = alert_index.list(stream_id, limit=limit, offset=offset)
+    return {
+        "total": total,
+        "alerts": [
+            {
+                "frame_id": r.get("frame_id", ""),
+                "alert_event": r.get("alert_event", ""),
+                "trigger_caption": r.get("trigger_caption", ""),
+                "uploaded_at": r.get("uploaded_at", ""),
+            }
+            for r in records
+        ],
+    }
+
+
+@app.get("/streams/{stream_id}/alerts/{frame_id}", tags=["Alerts"])
+async def alert_detail(stream_id: str, frame_id: str):
+    record = alert_index.get(stream_id, frame_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {
+        "stream_id": record.get("stream_id", stream_id),
+        "frame_id": record.get("frame_id", ""),
+        "alert_event": record.get("alert_event", ""),
+        "trigger_caption": record.get("trigger_caption", ""),
+        "description": record.get("description", ""),
+        "metrics": record.get("metrics", {}),
+        "model": record.get("model", ""),
+        "device": record.get("device", ""),
+        "uploaded_at": record.get("uploaded_at", ""),
+        "video_url": f"/streams/{stream_id}/alerts/{frame_id}/video",
+    }
+
+
+@app.get("/streams/{stream_id}/alerts/{frame_id}/video", tags=["Alerts"])
+async def alert_video(stream_id: str, frame_id: str):
+    record = alert_index.get(stream_id, frame_id)
+    if record is None or not record.get("video_object_key"):
+        raise HTTPException(status_code=404, detail="Alert video not found")
+
+    client = _get_alert_s3_client()
+    response = client.get_object(Bucket=settings.SEAWEEDFS_BUCKET, Key=record["video_object_key"])
+    return Response(content=response["Body"].read(), media_type="video/mp4")
 
 
 # ---------------------------------------------------------------------------
