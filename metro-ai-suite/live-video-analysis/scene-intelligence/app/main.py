@@ -18,10 +18,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from datetime import timezone
 
+from backend.alert_index import get_alert_index
 from backend.config import build_alert_prompt
 from backend.config import settings
 from backend.config import setup_logging
-from backend.alert_index import get_alert_index
 from backend.frame_registry import SegmentFrameRegistry
 from backend.registry import StreamRegistry
 from fastapi import FastAPI

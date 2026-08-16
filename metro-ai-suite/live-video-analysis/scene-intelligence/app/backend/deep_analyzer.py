@@ -134,6 +134,11 @@ class DeepAnalyzerEngine:
         self._finalized: "OrderedDict[str, None]" = OrderedDict()
         # Jobs whose "Yes" verdict arrived before their segment finalized.
         self._pending: dict[str, _AnalysisJob] = {}
+        # Segments with an outstanding job: pending, queued for dispatch, or
+        # currently being analyzed. StreamManager checks this before
+        # reclaiming a rotated-out segment so a slow/backed-up dispatch
+        # thread can never have its file deleted out from under it.
+        self._active: set[str] = set()
 
         self._queue: "queue.Queue[_AnalysisJob]" = queue.Queue()
         self._dispatch_thread = threading.Thread(
@@ -205,6 +210,7 @@ class DeepAnalyzerEngine:
             if segment_path in self._dedup:
                 return  # already queued/pending/done — don't waste compute
             self._mark(self._dedup, segment_path)
+            self._active.add(segment_path)
 
             if segment_path not in self._finalized:
                 # Still being written; hold until on_segment_finalized() fires.
@@ -228,6 +234,15 @@ class DeepAnalyzerEngine:
             self._queue.put(job)
             logger.info("[%s] deep-analysis queued (segment finalized): %s", job.stream_id, segment_path)
 
+    def is_segment_active(self, segment_path: str) -> bool:
+        """Whether `segment_path` still has a pending/queued/in-flight job.
+
+        Used by StreamManager's segment-retention reclaim so a backed-up
+        dispatch thread never has its segment deleted before it gets to it.
+        """
+        with self._lock:
+            return segment_path in self._active
+
     # ------------------------------------------------------------------ #
     # Worker
     # ------------------------------------------------------------------ #
@@ -241,6 +256,9 @@ class DeepAnalyzerEngine:
                 logger.exception(
                     "[%s] deep-analysis failed for segment=%s", job.stream_id, job.segment_path
                 )
+            finally:
+                with self._lock:
+                    self._active.discard(job.segment_path)
 
     def _read_segment_frames(self, job: _AnalysisJob) -> np.ndarray:
         """Read frames from a "finalized" segment, tolerating a not-yet-flushed trailer.
