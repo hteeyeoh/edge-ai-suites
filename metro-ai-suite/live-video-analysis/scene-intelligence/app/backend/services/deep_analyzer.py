@@ -29,11 +29,7 @@ Flow, driven by :class:`backend.services.stream_manager.StreamManager`:
 
 from __future__ import annotations
 
-import av
 import logging
-import numpy as np
-import openvino as ov
-import openvino_genai as ov_genai
 import os
 import queue
 import re
@@ -45,10 +41,15 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
 
-from .alert_index import get_alert_index
+import av
+import numpy as np
+import openvino as ov
+import openvino_genai as ov_genai
+
 from ..config import settings
-from .object_storage import SeaweedFSStorage
 from . import utils
+from .alert_index import get_alert_index
+from .object_storage import SeaweedFSStorage
 
 logger = logging.getLogger(__name__)
 

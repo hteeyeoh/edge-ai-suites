@@ -26,7 +26,6 @@ CPU for a large cut in relay bandwidth.
 
 from __future__ import annotations
 
-import av
 import errno
 import logging
 import threading
@@ -36,17 +35,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import av
+
 from ..config import settings
 from .deep_analyzer import get_deep_analyzer
-from .frame_registry import (
-    FrameRecord,
-    SegmentFrameRegistry,
-)
-from .vlm import (
-    get_vlm_engine,
-    parse_yes_no,
-)
-
+from .frame_registry import FrameRecord
+from .frame_registry import SegmentFrameRegistry
+from .vlm import get_vlm_engine
+from .vlm import parse_yes_no
 
 logger = logging.getLogger(__name__)
 
@@ -376,9 +372,7 @@ class StreamManager:
         Segment writing never stops on its own: SEGMENT_MAX_ON_DISK caps disk
         usage as a rolling buffer (oldest finalized segment deleted once the
         count is exceeded, see ``_reclaim_old_segments``), not a hard limit on
-        writer lifetime. VLM_MAX_INFERENCES remains an independent cap on the
-        VLM worker and, like SEGMENT_MAX_ON_DISK, never forces a relay
-        reconnect.
+        writer lifetime.
 
         Performance notes: everything invariant for the lifetime of a
         connection — settings, bound methods, the float form of the stream
@@ -701,14 +695,12 @@ class StreamManager:
         alert_event = self.alert_event
         priority = bool(alert_event)
         deep_enabled = settings.DEEP_ANALYZER_ENABLED and bool(alert_event)
-        max_inferences = settings.VLM_MAX_INFERENCES
         get_segment = self.frame_registry.get_segment if self.frame_registry else None
         frame_event = self._frame_event
         frame_lock = self._frame_lock
         health_lock = self._lock
 
         processed_ts = 0.0
-        inference_count = 0
         while self._running:
             # Bounded wait so shutdown is still observed even if nothing signals;
             # clear before reading so a frame published mid-inference is never missed.
@@ -770,16 +762,6 @@ class StreamManager:
                         stream_id,
                         frame_id,
                     )
-
-            inference_count += 1
-            if max_inferences and inference_count >= max_inferences:
-                logger.info(
-                    "[%s] VLM_MAX_INFERENCES=%d reached; inference worker stopping "
-                    "(relay/segments unaffected)",
-                    stream_id,
-                    max_inferences,
-                )
-                break
 
         logger.info("Inference worker exited for stream '%s'", stream_id)
 

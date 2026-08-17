@@ -2,12 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-)
-
 from backend.config import build_alert_prompt
+from fastapi import APIRouter
+from fastapi import HTTPException
 
 
 def build_stream_router(registry, alert_index) -> APIRouter:

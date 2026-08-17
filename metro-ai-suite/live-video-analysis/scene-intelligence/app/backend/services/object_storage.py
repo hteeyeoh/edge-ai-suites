@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import boto3
-from botocore.config import Config
 import json
 import logging
 import os
@@ -14,12 +12,13 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import (
-    datetime,
-    timezone,
-)
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import Any
+
+import boto3
+from botocore.config import Config
 
 from ..config import settings
 
@@ -29,10 +28,8 @@ logger = logging.getLogger(__name__)
 class SeaweedFSStorage:
     """Encapsulates SeaweedFS S3 operations and bucket lifecycle.
 
-    TODO: no retention/expiry policy yet — uploaded segment videos and
-    sidecar JSON accumulate in the bucket forever. Add lifecycle rules
-    (e.g. SeaweedFS TTL/collection settings or a periodic cleanup pass)
-    once storage growth needs to be bounded.
+    Uploaded segment videos and sidecar JSON are expired by the bucket-wide
+    S3 lifecycle rule configured during initialization.
     """
 
     def __init__(self) -> None:
@@ -158,7 +155,36 @@ class SeaweedFSStorage:
                         settings.SEAWEEDFS_BUCKET,
                     )
 
+            self._ensure_lifecycle()
             self._bucket_ready = True
+
+    def _ensure_lifecycle(self) -> None:
+        """Apply the bucket-wide expiration policy for uploaded alert artifacts."""
+        retention_days = settings.S3_RETENTION_DAYS
+        if retention_days <= 0:
+            raise ValueError("S3_RETENTION_DAYS must be greater than zero")
+
+        self._run_with_retries(
+            lambda: self._client.put_bucket_lifecycle_configuration(
+                Bucket=settings.SEAWEEDFS_BUCKET,
+                LifecycleConfiguration={
+                    "Rules": [
+                        {
+                            "ID": "expire-alert-artifacts",
+                            "Status": "Enabled",
+                            "Filter": {"Prefix": ""},
+                            "Expiration": {"Days": retention_days},
+                        }
+                    ]
+                },
+            ),
+            "put_bucket_lifecycle_configuration",
+        )
+        logger.info(
+            "SeaweedFS lifecycle configured: bucket=%s expiration_days=%d",
+            settings.SEAWEEDFS_BUCKET,
+            retention_days,
+        )
 
     def _build_object_keys(self, stream_id: str, segment_path: str, frame_id: uuid.UUID) -> tuple[str, str]:
         base_name = f"{Path(segment_path).stem}-{frame_id}"

@@ -3,35 +3,28 @@
 
 from __future__ import annotations
 
-import boto3
 import logging
 import os
 import time
-import uvicorn
 from contextlib import asynccontextmanager
+
+import boto3
+import uvicorn
+from backend.config import settings
+from backend.config import setup_logging
+from backend.routes import build_alert_router
+from backend.routes import build_health_router
+from backend.routes import build_registry_router
+from backend.routes import build_runtime_config_router
+from backend.routes import build_stream_router
+from backend.services.alert_index import get_alert_index
+from backend.services.frame_registry import SegmentFrameRegistry
+from backend.services.stream_registry import StreamRegistry
 from botocore.config import Config
-from fastapi import (
-    FastAPI,
-)
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-
-from backend.config import (
-    settings,
-    setup_logging,
-)
-from backend.services.stream_registry import StreamRegistry
-from backend.services.frame_registry import SegmentFrameRegistry
-from backend.services.alert_index import get_alert_index
-from backend.routes import (
-    build_alert_router,
-    build_health_router,
-    build_registry_router,
-    build_runtime_config_router,
-    build_stream_router,
-)
-
 
 setup_logging()
 logger = logging.getLogger(__name__)

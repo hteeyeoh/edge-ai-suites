@@ -7,10 +7,8 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import (
-    Dict,
-    List,
-)
+from typing import Dict
+from typing import List
 
 from ..config import settings
 from .frame_registry import SegmentFrameRegistry

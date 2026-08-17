@@ -126,14 +126,6 @@ class Settings:
     # Max number of concurrent streams the registry will accept.
     MAX_STREAMS: int = _int("MAX_STREAMS", 8)
 
-    # Rolling buffer cap: max finalized .mp4 segments retained on disk per
-    # stream. Once a new segment finalizes and pushes the count over this,
-    # the oldest finalized segment (and its frame-registry entries) is
-    # deleted — segments roll forever, the writer never stops on its own.
-    # 0 disables the cap (unbounded, segments accumulate indefinitely).
-    MAX_SEGMENTS: int = _int("MAX_SEGMENTS", 20)
-    VLM_MAX_INFERENCES: int = _int("VLM_MAX_INFERENCES", 20)
-
     # Hard cap on finalized segments retained on disk per stream; oldest is
     # deleted once a new segment finalizes and pushes the count over this.
     # 0 disables the cap (unbounded). Retained video per stream is roughly
@@ -202,6 +194,8 @@ class Settings:
     SEAWEEDFS_BUCKET: str = os.getenv("SEAWEEDFS_BUCKET", "scene-intelligence")
     SEAWEEDFS_USE_SSL: bool = _bool("SEAWEEDFS_USE_SSL", False)
     SEAWEEDFS_VERIFY_SSL: bool = _bool("SEAWEEDFS_VERIFY_SSL", False)
+    # S3 lifecycle retention applies to SeaweedFS and AWS S3-compatible endpoints.
+    S3_RETENTION_DAYS: int = _int("S3_RETENTION_DAYS", 10)
     SEAWEEDFS_UPLOAD_RETRIES: int = 3
     SEAWEEDFS_RETRY_DELAY_SECONDS: float = 1.0
     SEAWEEDFS_MAX_RETRY_DELAY_SECONDS: float = _float("SEAWEEDFS_MAX_RETRY_DELAY_SECONDS", 2.0)

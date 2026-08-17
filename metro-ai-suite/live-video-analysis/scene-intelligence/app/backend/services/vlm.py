@@ -18,18 +18,17 @@ from __future__ import annotations
 
 import itertools
 import logging
-import numpy as np
 import os
-import openvino as ov
-import openvino_genai as ov_genai
 import queue
 import re
 import threading
 import time
-from typing import (
-    Any,
-    Optional,
-)
+from typing import Any
+from typing import Optional
+
+import numpy as np
+import openvino as ov
+import openvino_genai as ov_genai
 
 from ..config import settings
 from . import utils

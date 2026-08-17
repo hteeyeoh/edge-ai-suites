@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-)
+from fastapi import APIRouter
+from fastapi import HTTPException
 
 
 def build_registry_router(frame_registry) -> APIRouter:

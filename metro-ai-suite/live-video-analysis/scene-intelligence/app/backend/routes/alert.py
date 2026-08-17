@@ -2,11 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    Query,
-)
+from fastapi import APIRouter
+from fastapi import HTTPException
+from fastapi import Query
 from fastapi.responses import Response
 
 

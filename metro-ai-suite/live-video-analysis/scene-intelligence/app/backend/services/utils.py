@@ -1,6 +1,7 @@
 import logging
-import openvino_genai as ov_genai
 from typing import Optional
+
+import openvino_genai as ov_genai
 
 logger = logging.getLogger(__name__)
 

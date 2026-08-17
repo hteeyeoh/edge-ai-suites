@@ -3,25 +3,26 @@
 
 """In-memory, per-stream audit index of uploaded deep-analysis alerts.
 
-Segments and their ``analysis.json`` sidecars live forever in SeaweedFS (see
-object_storage.py's retention TODO), so this index exists purely to let the UI
-browse that history without re-listing the bucket on every request. It is not
-persisted: on first access for a given stream, it lazily hydrates itself by
-listing that stream's sidecars from SeaweedFS, then stays current as new
-alerts are uploaded via `add()`.
+The index follows the configured S3 lifecycle retention period so expired
+segment references are hidden even before the object store removes them. It is
+not persisted: on first access for a given stream, it lazily hydrates itself by
+listing that stream's sidecars from SeaweedFS, then stays current as new alerts
+are uploaded via `add()`.
 """
 
 from __future__ import annotations
 
-import boto3
-from botocore.config import Config
 import json
 import logging
 import threading
-from typing import (
-    Any,
-    Optional,
-)
+from datetime import datetime
+from datetime import timedelta
+from datetime import timezone
+from typing import Any
+from typing import Optional
+
+import boto3
+from botocore.config import Config
 
 from ..config import settings
 
@@ -50,12 +51,32 @@ class AlertIndexStore:
             )
         return self._client
 
+    @staticmethod
+    def _is_retained(record: dict[str, Any]) -> bool:
+        uploaded_at = record.get("uploaded_at")
+        if not uploaded_at:
+            return False
+        try:
+            timestamp = datetime.fromisoformat(str(uploaded_at).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=settings.S3_RETENTION_DAYS)
+        return timestamp >= cutoff
+
+    def _retained_entries(self, stream_id: str) -> list[dict[str, Any]]:
+        entries = self._by_stream.get(stream_id, [])
+        retained = [record for record in entries if self._is_retained(record)]
+        self._by_stream[stream_id] = retained
+        return retained
+
     def add(self, record: Optional[dict[str, Any]]) -> None:
         """Insert a freshly uploaded alert record at the front of its stream's list."""
         if not record:
             return
         stream_id = record.get("stream_id")
-        if not stream_id:
+        if not stream_id or not self._is_retained(record):
             return
         with self._lock:
             entries = self._by_stream.setdefault(stream_id, [])
@@ -92,7 +113,11 @@ class AlertIndexStore:
             if stream_id not in self._hydrated:
                 existing = self._by_stream.get(stream_id, [])
                 known_frame_ids = {r.get("frame_id") for r in existing}
-                merged = existing + [r for r in records if r.get("frame_id") not in known_frame_ids]
+                merged = existing + [
+                    r
+                    for r in records
+                    if r.get("frame_id") not in known_frame_ids and self._is_retained(r)
+                ]
                 merged.sort(key=lambda r: r.get("uploaded_at", ""), reverse=True)
                 self._by_stream[stream_id] = merged[: settings.ALERT_INDEX_MAX_PER_STREAM]
                 self._hydrated.add(stream_id)
@@ -101,7 +126,7 @@ class AlertIndexStore:
         """Return a page of alerts (newest first) and the total known count."""
         self._hydrate(stream_id)
         with self._lock:
-            entries = self._by_stream.get(stream_id, [])
+            entries = self._retained_entries(stream_id)
             total = len(entries)
             page = entries[offset : offset + limit]
         return page, total
@@ -110,12 +135,12 @@ class AlertIndexStore:
         """Total known alerts for this stream (hydrates from SeaweedFS once per stream)."""
         self._hydrate(stream_id)
         with self._lock:
-            return len(self._by_stream.get(stream_id, []))
+            return len(self._retained_entries(stream_id))
 
     def get(self, stream_id: str, frame_id: str) -> Optional[dict[str, Any]]:
         self._hydrate(stream_id)
         with self._lock:
-            for record in self._by_stream.get(stream_id, []):
+            for record in self._retained_entries(stream_id):
                 if record.get("frame_id") == frame_id:
                     return record
         return None
