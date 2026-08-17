@@ -87,9 +87,8 @@ class Settings:
     METRICS_SERVICE_PORT: int = _int("METRICS_SERVICE_PORT", 9090)
 
     # ---- VLM inference (OpenVINO GenAI) ----
-    # When true, each stream decodes sampled frames and captions them with the
+    # Each stream decodes sampled frames and captions them with the
     # OpenVINO GenAI VLM pipeline.
-    VLM_ENABLED: bool = _bool("VLM_ENABLED", True)
 
     # Root of the mounted model tree. Models are organised per device as
     # <VLM_MODELS_DIR>/<device>/<VLM_MODEL>, e.g. /models/cpu/InternVL2-1B.
@@ -116,20 +115,10 @@ class Settings:
     NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 1024)
     NPU_MIN_RESPONSE_LEN = _int("NPU_MIN_RESPONSE_LEN", 512)
 
-    # Optional pre-inference frame resize for VLM input. Independent of
-    # SEGMENT_DIM_* below — applied on top of whatever the segment encode
-    # resolution is. Leave empty to caption at the segment's encode size.
-    # Format: WIDTHxHEIGHT (for example 640x360).
-
-    # Optional pre-inference frame resize for VLM input. Leave empty to keep
-    # original sampled frame size. Format: WIDTHxHEIGHT (for example 640x360).
-    VLM_FRAME_RESIZE: tuple[int, int] | None = _frame_size("VLM_FRAME_RESIZE")
-
     # Benchmarked segment recording (encode) dimensions per source aspect
     # ratio bucket; the closest bucket to the source's aspect ratio is used
-    # (see _calculate_scaled_dimensions in stream_manager.py). This only sets
-    # the .mp4 encode resolution — it does not affect VLM input size, which is
-    # controlled independently by VLM_FRAME_RESIZE above. Format: WIDTHxHEIGHT.
+    # (see _calculate_scaled_dimensions in stream_manager.py). This sets the
+    # .mp4 encode resolution. Format: WIDTHxHEIGHT.
     SEGMENT_DIM_1_1: tuple[int, int] = _frame_size_default("SEGMENT_DIM_1_1", (448, 448))
     SEGMENT_DIM_4_3: tuple[int, int] = _frame_size_default("SEGMENT_DIM_4_3", (512, 384))
     SEGMENT_DIM_16_9: tuple[int, int] = _frame_size_default("SEGMENT_DIM_16_9", (576, 320))
@@ -190,7 +179,7 @@ class Settings:
     DEEP_ANALYZER_NPU_MIN_RESPONSE_LEN = _int("DEEP_ANALYZER_NPU_MIN_RESPONSE_LEN", 512)
 
     # Bounded cache size for the dedup/finalized-segment tracking sets in
-    # backend.deep_analyzer (per-process, not per-stream).
+    # backend.services.deep_analyzer (per-process, not per-stream).
     DEEP_ANALYZER_DEDUP_CACHE_SIZE: int = _int("DEEP_ANALYZER_DEDUP_CACHE_SIZE", 500)
 
     # The "finalized" signal is a best-effort prediction (see

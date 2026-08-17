@@ -8,7 +8,7 @@ Separate from ``vlm.py``'s single-frame captioning engine: different model
 finalized ``.mp4`` segment instead of one live frame) and different cadence
 (once per confirmed-alert segment instead of every ``VLM_INTERVAL``).
 
-Flow, driven by :class:`backend.stream_manager.StreamManager`:
+Flow, driven by :class:`backend.services.stream_manager.StreamManager`:
 
 1. ``submit()`` is called the moment a sampled frame's caption comes back
    "Yes". It resolves to a ``segment_path`` (via the frame registry) and is
@@ -29,7 +29,11 @@ Flow, driven by :class:`backend.stream_manager.StreamManager`:
 
 from __future__ import annotations
 
+import av
 import logging
+import numpy as np
+import openvino as ov
+import openvino_genai as ov_genai
 import os
 import queue
 import re
@@ -41,12 +45,10 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Optional
 
-import av
-import numpy as np
-from backend import utils
-from backend.alert_index import get_alert_index
-from backend.config import settings
-from backend.object_storage import SeaweedFSStorage
+from .alert_index import get_alert_index
+from ..config import settings
+from .object_storage import SeaweedFSStorage
+from . import utils
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +151,6 @@ class DeepAnalyzerEngine:
         self._object_storage: SeaweedFSStorage = SeaweedFSStorage()
 
     def _load(self) -> None:
-        import openvino_genai as ov_genai
-
         model_path = os.path.join(
             settings.DEEP_ANALYZER_MODELS_DIR,
             settings.DEEP_ANALYZER_DEVICE.lower(),
@@ -321,8 +321,7 @@ class DeepAnalyzerEngine:
             time.sleep(settings.DEEP_ANALYZER_SEGMENT_READ_RETRY_DELAY)
 
     def _analyze(self, job: _AnalysisJob) -> None:
-        import openvino as ov
-
+        """Read frames from a finalized segment and call the VLM pipeline on them."""
         frames = self._read_segment_frames(job)
         tensor = ov.Tensor(frames)
         prompt = settings.DEEP_ANALYZER_PROMPT_TEMPLATE.format(event=job.alert_event)

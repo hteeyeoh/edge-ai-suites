@@ -1,36 +1,37 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Scene Intelligence — FastAPI application.
-
-Step 1 scope: ingest an RTSP source with PyAV, remux it into MediaMTX, and
-render it in the browser over WebRTC (WHEP).
-"""
-
 from __future__ import annotations
 
-import json
+import boto3
 import logging
 import os
 import time
-import uuid
+import uvicorn
 from contextlib import asynccontextmanager
-from datetime import datetime
-from datetime import timezone
-
-from backend.alert_index import get_alert_index
-from backend.config import build_alert_prompt
-from backend.config import settings
-from backend.config import setup_logging
-from backend.frame_registry import SegmentFrameRegistry
-from backend.registry import StreamRegistry
-from fastapi import FastAPI
-from fastapi import HTTPException
-from fastapi import Query
+from botocore.config import Config
+from fastapi import (
+    FastAPI,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+
+from backend.config import (
+    settings,
+    setup_logging,
+)
+from backend.services.stream_registry import StreamRegistry
+from backend.services.frame_registry import SegmentFrameRegistry
+from backend.services.alert_index import get_alert_index
+from backend.routes import (
+    build_alert_router,
+    build_health_router,
+    build_registry_router,
+    build_runtime_config_router,
+    build_stream_router,
+)
+
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -44,8 +45,7 @@ _UI_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui")
 
 
 def _get_alert_s3_client():
-    import boto3
-    from botocore.config import Config
+    logger.info("Initialize SeaweedFS S3 client for video segment storage")
 
     return boto3.client(
         "s3",
@@ -84,218 +84,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(build_health_router(registry, _startup_time))
+app.include_router(build_runtime_config_router(settings))
+app.include_router(build_registry_router(frame_registry))
+app.include_router(build_stream_router(registry, alert_index))
+app.include_router(build_alert_router(alert_index, _get_alert_s3_client, settings))
+
+
 _static_dir = os.path.join(_UI_DIR, "static")
 if os.path.isdir(_static_dir):
     app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 
 # ---------------------------------------------------------------------------
-# Observability
-# ---------------------------------------------------------------------------
-
-
-@app.get("/health", tags=["Observability"])
-async def health():
-    return {
-        "status": "healthy",
-        "streams_active": len(registry.ids()),
-        "uptime_seconds": round(time.monotonic() - _startup_time, 1),
-        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Runtime config (consumed by the browser for WebRTC signaling)
-# ---------------------------------------------------------------------------
-
-
-@app.get("/runtime-config.js", tags=["UI"])
-async def runtime_config():
-    payload = {
-        "webrtcSignalingUrl": settings.WEBRTC_SIGNALING_URL,
-        "webrtcSignalingPort": settings.WEBRTC_SIGNALING_PORT,
-        "metricsServicePort": settings.METRICS_SERVICE_PORT,
-        "vlmModel": settings.VLM_MODEL,
-        "vlmDevice": settings.VLM_DEVICE,
-    }
-    body = f"window.RUNTIME_CONFIG = {json.dumps(payload)};"
-    return Response(content=body, media_type="application/javascript")
-
-
-# ---------------------------------------------------------------------------
-# Stream management
-# ---------------------------------------------------------------------------
-
-
-@app.get("/streams", tags=["Streams"])
-async def list_streams():
-    result = []
-    for manager in registry.all():
-        h = manager.get_health()
-        result.append(
-            {
-                "stream_id": manager.stream_id,
-                "url": manager.source_url,
-                "alert_event": manager.alert_event,
-                "publishing": h.publishing,
-                "codec": h.codec,
-                "resolution": h.resolution,
-                "reconnect_count": h.reconnect_count,
-                "whep_path": f"/{manager.stream_id}/whep",
-                "caption": h.caption,
-                "caption_ts": h.caption_ts,
-                "ttft_ms": h.ttft_ms,
-                "tpot_ms": h.tpot_ms,
-                "throughput_tps": h.throughput_tps,
-                "alert_count": alert_index.count(manager.stream_id),
-            }
-        )
-    return {"streams": result}
-
-
-@app.post("/streams", tags=["Streams"])
-async def add_stream(payload: dict):
-    source_url = (payload or {}).get("url", "").strip()
-    stream_id = (payload or {}).get("stream_id", "").strip() or "default"
-    alert_event = (payload or {}).get("alert_event", "")
-    normalized_alert_event = ""
-    if isinstance(alert_event, str):
-        normalized_alert_event = " ".join(alert_event.strip().split())
-    prompt = ""
-    if not source_url:
-        raise HTTPException(status_code=400, detail="'url' is required")
-    if settings.VLM_ENABLED:
-        if not isinstance(alert_event, str) or not alert_event.strip():
-            raise HTTPException(
-                status_code=400,
-                detail="'alert_event' is required when VLM is enabled",
-            )
-        try:
-            prompt = build_alert_prompt(normalized_alert_event)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-    try:
-        registry.add(stream_id, source_url, prompt, normalized_alert_event)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
-    return {"status": "added", "stream_id": stream_id}
-
-
-@app.delete("/streams/{stream_id}", tags=["Streams"])
-async def delete_stream(stream_id: str):
-    try:
-        registry.remove(stream_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Stream '{stream_id}' not found")
-    return {"status": "removed", "stream_id": stream_id}
-
-
-# ---------------------------------------------------------------------------
-# Alert audit log (SeaweedFS-backed history of confirmed alert events)
-# ---------------------------------------------------------------------------
-
-
-@app.get("/streams/{stream_id}/alerts", tags=["Alerts"])
-async def list_alerts(
-    stream_id: str,
-    limit: int = Query(default=20, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-):
-    records, total = alert_index.list(stream_id, limit=limit, offset=offset)
-    return {
-        "total": total,
-        "alerts": [
-            {
-                "frame_id": r.get("frame_id", ""),
-                "alert_event": r.get("alert_event", ""),
-                "trigger_caption": r.get("trigger_caption", ""),
-                "uploaded_at": r.get("uploaded_at", ""),
-            }
-            for r in records
-        ],
-    }
-
-
-@app.get("/streams/{stream_id}/alerts/{frame_id}", tags=["Alerts"])
-async def alert_detail(stream_id: str, frame_id: str):
-    record = alert_index.get(stream_id, frame_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    return {
-        "stream_id": record.get("stream_id", stream_id),
-        "frame_id": record.get("frame_id", ""),
-        "alert_event": record.get("alert_event", ""),
-        "trigger_caption": record.get("trigger_caption", ""),
-        "description": record.get("description", ""),
-        "metrics": record.get("metrics", {}),
-        "model": record.get("model", ""),
-        "device": record.get("device", ""),
-        "uploaded_at": record.get("uploaded_at", ""),
-        "video_url": f"/streams/{stream_id}/alerts/{frame_id}/video",
-    }
-
-
-@app.get("/streams/{stream_id}/alerts/{frame_id}/video", tags=["Alerts"])
-async def alert_video(stream_id: str, frame_id: str):
-    record = alert_index.get(stream_id, frame_id)
-    if record is None or not record.get("video_object_key"):
-        raise HTTPException(status_code=404, detail="Alert video not found")
-
-    client = _get_alert_s3_client()
-    response = client.get_object(Bucket=settings.SEAWEEDFS_BUCKET, Key=record["video_object_key"])
-    return Response(content=response["Body"].read(), media_type="video/mp4")
-
-
-# ---------------------------------------------------------------------------
-# Frame metadata registry (segment handoff for deep analysis)
-# ---------------------------------------------------------------------------
-
-
-@app.get("/registry/stats", tags=["Registry"])
-async def registry_stats():
-    return frame_registry.stats()
-
-
-@app.get("/registry/stream/{stream_id}", tags=["Registry"])
-async def registry_stream(stream_id: str, limit: int = 50):
-    records = frame_registry.latest(stream_id, limit)
-    return {
-        "records": [
-            {
-                "frame_id": str(r.frame_id),
-                "stream_id": r.stream_id,
-                "segment_path": r.segment_path,
-                "pts_seconds": r.pts_seconds,
-                "created_ts": r.created_ts,
-            }
-            for r in records
-        ]
-    }
-
-
-@app.get("/registry/frame/{frame_id}", tags=["Registry"])
-async def registry_frame(frame_id: str):
-    try:
-        parsed_id = uuid.UUID(frame_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="'frame_id' must be a valid UUID")
-    record = frame_registry.get_record(parsed_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="frame_id not found")
-    return {
-        "frame_id": str(record.frame_id),
-        "stream_id": record.stream_id,
-        "rtsp_url": record.rtsp_url,
-        "segment_path": record.segment_path,
-        "pts_seconds": record.pts_seconds,
-        "created_ts": record.created_ts,
-    }
-
-
-# ---------------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------------
-
 
 @app.get("/", response_class=HTMLResponse, tags=["UI"])
 async def index():
@@ -307,8 +110,6 @@ async def index():
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     uvicorn.run(
         "main:app",
         host="0.0.0.0",

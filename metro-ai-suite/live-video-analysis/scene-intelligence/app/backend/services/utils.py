@@ -1,9 +1,8 @@
 import logging
-
 import openvino_genai as ov_genai
+from typing import Optional
 
 logger = logging.getLogger(__name__)
-from typing import Optional
 
 
 def _extract_perf_metrics(result: ov_genai.py_openvino_genai.VLMDecodedResults) -> dict[str, Optional[float]]:

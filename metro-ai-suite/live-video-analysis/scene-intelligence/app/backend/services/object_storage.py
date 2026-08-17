@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import boto3
+from botocore.config import Config
 import json
 import logging
 import os
@@ -12,12 +14,14 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
-from datetime import timezone
+from datetime import (
+    datetime,
+    timezone,
+)
 from pathlib import Path
 from typing import Any
 
-from backend.config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +47,8 @@ class SeaweedFSStorage:
         self._ensure_bucket()
 
     def _create_client(self):
-        import boto3
-        from botocore.config import Config
+        """Create a SeaweedFS S3 client with the configured endpoint and credentials."""
+        logger.info("Creating SeaweedFS S3 client for endpoint: %s", settings.SEAWEEDFS_ENDPOINT_URL)
 
         return boto3.client(
             "s3",

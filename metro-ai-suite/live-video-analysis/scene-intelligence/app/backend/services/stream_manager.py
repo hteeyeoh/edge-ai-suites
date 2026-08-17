@@ -26,6 +26,7 @@ CPU for a large cut in relay bandwidth.
 
 from __future__ import annotations
 
+import av
 import errno
 import logging
 import threading
@@ -35,11 +36,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import av
-from backend.config import settings
-from backend.deep_analyzer import get_deep_analyzer
-from backend.frame_registry import FrameRecord
-from backend.frame_registry import SegmentFrameRegistry
+from ..config import settings
+from .deep_analyzer import get_deep_analyzer
+from .frame_registry import (
+    FrameRecord,
+    SegmentFrameRegistry,
+)
+from .vlm import (
+    get_vlm_engine,
+    parse_yes_no,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +166,7 @@ class StreamManager:
     # ------------------------------------------------------------------ #
 
     def start(self) -> None:
+        """Start the relay thread and the inference worker when a prompt is set."""
         if self._running:
             return
         self._running = True
@@ -181,7 +189,7 @@ class StreamManager:
             self.frame_registry is not None,
         )
 
-        if settings.VLM_ENABLED and self.vlm_prompt:
+        if self.vlm_prompt:
             self._infer_thread = threading.Thread(
                 target=self._infer_worker,
                 daemon=True,
@@ -189,13 +197,14 @@ class StreamManager:
             )
             self._infer_thread.start()
             logger.info("Started VLM inference for '%s'", self.stream_id)
-        elif settings.VLM_ENABLED:
+        else:
             logger.info(
                 "VLM prompt not set for '%s' — captions disabled until stream is re-added with a prompt",
                 self.stream_id,
             )
 
     def stop(self) -> None:
+        """Stop the relay and inference threads, waiting for them to exit."""
         self._running = False
         self._frame_event.set()
         if self._thread:
@@ -211,6 +220,7 @@ class StreamManager:
     # ------------------------------------------------------------------ #
 
     def get_health(self) -> StreamHealth:
+        """Return a snapshot of the stream's current health state."""
         with self._lock:
             return StreamHealth(
                 publishing=self.health.publishing,
@@ -388,7 +398,7 @@ class StreamManager:
 
         is_rtsp = str(self.source_url).startswith(("rtsp://", "rtsps://"))
         pace_playback = do_relay and not is_rtsp
-        vlm_active = do_segment and settings.VLM_ENABLED and bool(self.vlm_prompt)
+        vlm_active = do_segment and bool(self.vlm_prompt)
 
         # Hoist settings lookups, bound methods and globals into locals: these
         # are read once per frame otherwise, and Python resolves each one at
@@ -679,9 +689,6 @@ class StreamManager:
         starts the instant the sampler publishes a frame instead of up to one
         poll interval later.
         """
-        from backend.vlm import get_vlm_engine
-        from backend.vlm import parse_yes_no
-
         try:
             engine = get_vlm_engine()
         except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured

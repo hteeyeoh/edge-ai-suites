@@ -16,11 +16,15 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass
-from dataclasses import field
-from typing import Dict
-from typing import List
-from typing import Optional
+from dataclasses import (
+    dataclass,
+    field,
+)
+from typing import (
+    Dict,
+    List,
+    Optional,
+)
 
 
 @dataclass
@@ -37,6 +41,7 @@ class SegmentFrameRegistry:
     """Thread-safe registry with a fixed per-stream cap; evicts a stream's own oldest record on overflow."""
 
     def __init__(self, max_records_per_stream: int = 500):
+        """Initialize the registry with a per-stream record limit."""
         self._records: Dict[uuid.UUID, FrameRecord] = {}
         # Per-stream insertion order, used to evict only within the offending stream.
         self._stream_order: Dict[str, "OrderedDict[uuid.UUID, None]"] = {}
@@ -44,6 +49,7 @@ class SegmentFrameRegistry:
         self._max_records_per_stream = max_records_per_stream
 
     def register(self, record: FrameRecord) -> None:
+        """Add a new record, evicting the oldest for this stream if over capacity."""
         with self._lock:
             self._records[record.frame_id] = record
             order = self._stream_order.setdefault(record.stream_id, OrderedDict())
@@ -53,6 +59,7 @@ class SegmentFrameRegistry:
                 del self._records[oldest_id]
 
     def get_record(self, frame_id: uuid.UUID) -> Optional[FrameRecord]:
+        """Return the record for a given frame_id, or None if not found."""
         with self._lock:
             return self._records.get(frame_id)
 
@@ -90,6 +97,7 @@ class SegmentFrameRegistry:
         return records[-limit:]
 
     def stats(self) -> dict:
+        """Return a summary of the registry's current state."""
         with self._lock:
             total = len(self._records)
             per_stream: Dict[str, int] = {}

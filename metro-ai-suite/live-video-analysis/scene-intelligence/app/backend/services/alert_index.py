@@ -13,13 +13,17 @@ alerts are uploaded via `add()`.
 
 from __future__ import annotations
 
+import boto3
+from botocore.config import Config
 import json
 import logging
 import threading
-from typing import Any
-from typing import Optional
+from typing import (
+    Any,
+    Optional,
+)
 
-from backend.config import settings
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +38,8 @@ class AlertIndexStore:
         self._client = None
 
     def _get_client(self):
+        """Initialize a SeaweedFS S3 client for listing and reading sidecars."""
         if self._client is None:
-            import boto3
-            from botocore.config import Config
-
             self._client = boto3.client(
                 "s3",
                 endpoint_url=settings.SEAWEEDFS_ENDPOINT_URL,

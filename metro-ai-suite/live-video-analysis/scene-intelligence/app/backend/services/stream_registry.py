@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict
-from typing import List
+from typing import (
+    Dict,
+    List,
+)
 
-from backend.config import settings
-from backend.frame_registry import SegmentFrameRegistry
-from backend.stream_manager import StreamManager
+from ..config import settings
+from .frame_registry import SegmentFrameRegistry
+from .stream_manager import StreamManager
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ class StreamRegistry:
         vlm_prompt: str = "",
         alert_event: str = "",
     ) -> StreamManager:
+        """Create and start a new StreamManager for the given stream_id and source_url, and return it."""
         if not source_url:
             raise ValueError("source_url must not be empty")
         with self._lock:
@@ -51,6 +54,7 @@ class StreamRegistry:
         return manager
 
     def remove(self, stream_id: str) -> None:
+        """Stop and remove the StreamManager for the given stream_id."""
         with self._lock:
             manager = self._streams.pop(stream_id, None)
         if manager is None:
@@ -58,14 +62,17 @@ class StreamRegistry:
         manager.stop()
 
     def ids(self) -> List[str]:
+        """Return a list of all active stream IDs."""
         with self._lock:
             return list(self._streams.keys())
 
     def all(self) -> List[StreamManager]:
+        """Return a list of all active StreamManager instances."""
         with self._lock:
             return list(self._streams.values())
 
     def stop_all(self) -> None:
+        """Stop all active StreamManager instances and clear the registry."""
         for manager in self.all():
             manager.stop()
         with self._lock:

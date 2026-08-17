@@ -18,17 +18,21 @@ from __future__ import annotations
 
 import itertools
 import logging
+import numpy as np
 import os
+import openvino as ov
+import openvino_genai as ov_genai
 import queue
 import re
 import threading
 import time
-from typing import Any
-from typing import Optional
+from typing import (
+    Any,
+    Optional,
+)
 
-import numpy as np
-from backend import utils
-from backend.config import settings
+from ..config import settings
+from . import utils
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +90,6 @@ class VLMEngine:
 
     def _load(self) -> None:
         # Imported lazily so the app still starts if GenAI is unavailable.
-        import openvino_genai as ov_genai
-
         if not os.path.isdir(self._model_path):
             raise FileNotFoundError(f"VLM model not found at '{self._model_path}'")
 
@@ -138,8 +140,7 @@ class VLMEngine:
     def _generate(
         self, rgb_frame: np.ndarray, prompt_text: str
     ) -> tuple[str, dict[str, Optional[float]]]:
-        import openvino as ov
-
+        """Call the GenAI VLM pipeline on one frame and prompt."""
         # GenAI expects a batched NHWC uint8 tensor.
         tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
         t0 = time.perf_counter()
