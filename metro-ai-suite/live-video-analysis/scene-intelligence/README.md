@@ -1,61 +1,145 @@
 # Scene Intelligence
 
-RTSP ingestion and WebRTC rendering pipeline built with [PyAV](https://pyav.org).
-This sample application consumes RTSP streams, remuxes them into
-[MediaMTX](https://github.com/bluenviron/mediamtx) with PyAV (stream-copy, no
-re-encode), and renders low-latency video in the browser over **WebRTC (WHEP)**.
-It is the foundation for a later stage that adds a PyAV decode branch to forward
-frames to a VLM model for inference.
+## Overview
 
-## Architecture (Step 1)
+Scene Intelligence is a real-time video monitoring application that ingests RTSP camera streams, renders low-latency browser playback over WebRTC, and runs AI-based alert detection with deep multi-frame analysis.
 
+At runtime, each stream is managed by a PyAV worker that:
+
+- decodes once per frame from the RTSP source,
+- re-encodes a downscaled relay to MediaMTX for WebRTC playback,
+- samples frames for single-frame VLM alert checks,
+- writes rolling video segments for deep-analysis follow-up,
+- uploads confirmed alert artifacts (video + metadata) to SeaweedFS (S3-compatible storage).
+
+The application includes a FastAPI backend and a browser UI for stream control, live playback, system metrics, and alert history/details.
+
+## Current Implementation
+
+### Main components
+
+- app/main.py: FastAPI app wiring stream, alert, health, registry, and runtime-config routes.
+- app/backend/services/stream_manager.py: per-stream ingest loop, WebRTC relay output, frame sampling, segmentation, and alert trigger path.
+- app/backend/services/vlm.py: single-frame VLM inference used as the fast alert gate.
+- app/backend/services/deep_analyzer.py: multi-frame follow-up analysis for segments that triggered a positive alert.
+- app/backend/services/object_storage.py: SeaweedFS/S3 upload of alert video and JSON sidecar.
+- app/backend/services/alert_index.py: in-memory alert index with lazy hydration from stored sidecars.
+- app/ui/: dashboard for stream management, playback, device telemetry, and alert investigation.
+
+### Runtime services (Docker Compose)
+
+- scene-intelligence: FastAPI app + UI.
+- mediamtx: RTSP ingest target and WebRTC/WHEP playback service.
+- coturn: TURN server used by WebRTC.
+- metrics-manager: SSE metrics endpoint for CPU, RAM, GPU, and NPU visualization.
+- seaweedfs: S3-compatible object storage for alert artifacts.
+
+## Architecture
+
+```text
+RTSP Camera
+   |
+   v
+StreamManager (PyAV)
+   |-- downscaled H.264 relay -> MediaMTX -> WHEP/WebRTC -> Browser UI
+   |-- frame sampling -> VLM (Yes/No alert gate)
+   |-- rolling segments + frame registry
+                          |
+                          v
+                Deep Analyzer (multi-frame)
+                          |
+                          v
+        SeaweedFS (video + analysis sidecar JSON)
+                          |
+                          v
+               Alert APIs + UI alert history/details
 ```
-RTSP source ──▶ PyAV remux (StreamManager) ──▶ MediaMTX ──WebRTC/WHEP──▶ Browser
-                                                  ▲
-                                             coturn (TURN)
+
+## API Endpoints
+
+### Core app
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | / | UI dashboard |
+| GET | /health | Liveness with uptime and active stream count |
+| GET | /runtime-config.js | Runtime config consumed by the UI |
+
+### Stream management
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /streams | List active streams and runtime state |
+| POST | /streams | Add stream and alert configuration |
+| DELETE | /streams/{stream_id} | Stop and remove stream |
+
+POST /streams payload:
+
+```json
+{
+  "stream_id": "camera-lobby",
+  "url": "rtsp://<camera-host>/<path>",
+  "alert_event": "fire"
+}
 ```
 
-- `app/backend/stream_manager.py` — PyAV relay that opens the source and
-  remuxes packets into MediaMTX over RTSP, with auto-reconnect.
-- `app/backend/registry.py` — thread-safe registry owning stream lifecycles.
-- `app/main.py` — FastAPI app exposing `/streams`, `/health`, `/runtime-config.js`, and UI.
-- `app/ui/` — dashboard that plays the stream via a WHEP WebRTC handshake.
-- `mediamtx` — media server that serves the relayed stream over WebRTC.
-- `coturn` — TURN server for WebRTC NAT traversal.
+Notes:
 
-Video never leaves the compressed domain on the backend, so rendering stays
-low-latency; PyAV remains the video engine end to end.
+- alert_event is required.
+- only one alert event is supported per stream.
 
-## Endpoints
+### Alert APIs
 
-| Service            | Method | Path                   | Description                          |
-| ------------------ | ------ | ---------------------- | ------------------------------------ |
-| scene-intelligence | GET    | `/`                    | Dashboard UI                         |
-| scene-intelligence | GET    | `/streams`             | List active streams and health       |
-| scene-intelligence | POST   | `/streams`             | Add a stream `{ "url", "stream_id" }`|
-| scene-intelligence | DELETE | `/streams/{stream_id}` | Remove a stream                      |
-| scene-intelligence | GET    | `/runtime-config.js`   | WebRTC signaling config for the UI   |
-| scene-intelligence | GET    | `/health`              | Liveness probe                       |
-| mediamtx           | POST   | `/{stream_id}/whep`    | WebRTC (WHEP) playback handshake     |
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /streams/{stream_id}/alerts?limit=20&offset=0 | Paginated alert list |
+| GET | /streams/{stream_id}/alerts/{frame_id} | Alert detail and metadata |
+| GET | /streams/{stream_id}/alerts/{frame_id}/video | Alert video playback (mp4) |
+
+### Frame registry APIs
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | /registry/stats | Registry summary |
+| GET | /registry/streams/{stream_id} | Full registry records for stream |
+| GET | /registry/stream/{stream_id}?limit=50 | Latest registry records for stream |
+| GET | /registry/frame/{frame_id} | Lookup specific sampled frame record |
+
+### WebRTC playback handshake
+
+The browser UI opens WebRTC playback by posting SDP to MediaMTX WHEP:
+
+- POST /{stream_id}/whep (served by MediaMTX, not by FastAPI)
 
 ## Configuration
 
-All settings are environment variables (see `app/backend/config.py`):
+All runtime settings are controlled by environment variables in app/backend/config.py. Commonly tuned variables:
 
-| Variable               | Default                 | Description                                        |
-| ---------------------- | ----------------------- | -------------------------------------------------- |
-| `PORT`                 | `9100`                  | App HTTP port                                      |
-| `RTSP_TIMEOUT`         | `15.0`                  | PyAV open/read timeout (seconds)                   |
-| `WEBRTC_AUTO_PUBLISH`  | `true`                  | Relay each source into MediaMTX                    |
-| `WEBRTC_RELAY_URL`     | `rtsp://mediamtx:8554`  | MediaMTX RTSP base the relay publishes to          |
-| `WEBRTC_SIGNALING_URL` | *(derived)*             | Public WHEP base for the browser (host:port)       |
-| `WEBRTC_SIGNALING_PORT`| `8889`                  | MediaMTX WebRTC port                               |
-| `MAX_STREAMS`          | `8`                     | Maximum concurrent streams                         |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| PORT | 9100 | FastAPI/UI port |
+| RTSP_TIMEOUT | 15.0 | Input open/read timeout |
+| WEBRTC_RELAY_URL | rtsp://mediamtx:8554 | Relay publish target |
+| WEBRTC_SIGNALING_URL | (derived/optional) | Public WebRTC base URL |
+| WEBRTC_SIGNALING_PORT | 8889 | MediaMTX WebRTC port |
+| METRICS_SERVICE_PORT | 9090 | Metrics SSE service port |
+| MAX_STREAMS | 8 | Max concurrent streams |
+| VLM_MODEL | InternVL2-1B | Single-frame VLM model name |
+| VLM_DEVICE | CPU | Device for VLM (CPU/GPU/NPU) |
+| VLM_INTERVAL | 5.0 | Seconds between inference attempts |
+| SEGMENT_TIME_SECONDS | 15 | Segment duration |
+| FRAME_SAMPLE_FPS | 1 | Frame sampling rate for registry |
+| SEGMENT_MAX_ON_DISK | 50 | Per-stream segment retention cap |
+| DEEP_ANALYZER_ENABLED | true | Enable multi-frame deep analysis |
+| DEEP_ANALYZER_MODEL | Qwen3.5-2B-int4-ov | Deep analyzer model name |
+| DEEP_ANALYZER_DEVICE | GPU | Device for deep analyzer |
+| SEAWEEDFS_ENDPOINT_URL | http://seaweedfs:8333 | S3-compatible endpoint |
+| SEAWEEDFS_BUCKET | scene-intelligence | Alert artifact bucket |
+| S3_RETENTION_DAYS | 10 | Object retention/lifecycle window |
 
+## Model Download (One Time)
 
-## Download the Vision Language Model (one-time, ~5 min)
-
-This downloads the AI model that powers the captions/alerts. It only needs to run once. The model parameter is configurable and the user is requested to confirm the license agreement before the download.
+Download and convert the VLM model used for alert gating:
 
 ```bash
 ./model_download_scripts/download_models.sh \
@@ -64,19 +148,17 @@ This downloads the AI model that powers the captions/alerts. It only needs to ru
   --weight-format int8
 ```
 
-### Specifying the conversion device
-
-By default, the model is converted to run on CPU. To explicitly run on other device:
+Optional device-specific conversion:
 
 ```bash
-# Specify your desired target device in the --device flag
 ./model_download_scripts/download_models.sh \
   --model OpenGVLab/InternVL2-1B \
   --type vlm \
   --weight-format int8 \
   --device <CPU|GPU|NPU>
 ```
-> Note: NPU currently requires `int4` quantization for VLM conversion. If you pass `--device NPU` with `int8` or `fp16`, the script automatically overrides it to `int4`.
+
+Note: when device is NPU, conversion may require int4 quantization depending on model/tooling constraints.
 
 ## Run with Docker Compose
 
@@ -85,9 +167,25 @@ bash scripts/setup_env.sh
 docker compose up -d --build
 ```
 
-Open http://localhost:9100, then add a stream URL from the UI
-(or call `POST /streams` with `{ "url": "rtsp://...", "stream_id": "default" }`).
+Then open:
 
-> `bash scripts/setup_env.sh` creates `.env` from `.env.example`, detects the
-> host LAN IP, and sets the WebRTC signaling URL so browsers on other machines
-> can reach MediaMTX and coturn. Use `--force` to regenerate `.env`.
+- http://localhost:9100
+
+Add a stream from the UI using:
+
+- RTSP URL
+- optional Stream ID
+- required Alert Event
+
+Equivalent API call:
+
+```bash
+curl -X POST http://localhost:9100/streams \
+  -H 'Content-Type: application/json' \
+  -d '{"stream_id":"camera-lobby","url":"rtsp://<camera-host>/<path>","alert_event":"fire"}'
+```
+
+## Operational Notes
+
+- If no stream is configured, /health still reports healthy with streams_active=0.
+- Alerts are indexed in memory and lazily rehydrated from SeaweedFS sidecar JSON records.
