@@ -99,10 +99,14 @@
                         class="metrics-connection metrics-connection--idle">disconnected</span>
                 </div>
                 <div class="metrics-values">
-                    <span class="metric-chip metric-chip--cpu">CPU <strong id="cpu-val">-</strong></span>
-                    <span class="metric-chip metric-chip--ram">RAM <strong id="ram-val">-</strong></span>
-                    <span class="metric-chip metric-chip--gpu">GPU <strong id="gpu-val">-</strong></span>
-                    <span class="metric-chip metric-chip--npu">NPU <strong id="npu-val">-</strong></span>
+                    <span class="metric-chip metric-chip--cpu" data-chip="cpu" tabindex="0">CPU <strong
+                            id="cpu-val">-</strong></span>
+                    <span class="metric-chip metric-chip--ram" data-chip="ram" tabindex="0">RAM <strong
+                            id="ram-val">-</strong></span>
+                    <span class="metric-chip metric-chip--gpu" data-chip="gpu" tabindex="0">GPU <strong
+                            id="gpu-val">-</strong></span>
+                    <span class="metric-chip metric-chip--npu" data-chip="npu" tabindex="0">NPU <strong
+                            id="npu-val">-</strong></span>
                 </div>
                 <canvas id="metrics-canvas" class="metrics-canvas" width="640" height="220"></canvas>
             </section>

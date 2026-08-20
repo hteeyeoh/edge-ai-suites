@@ -54,6 +54,153 @@ let metricsReconnectAttempts = 0;
 const metricsMaxReconnectAttempts = 10;
 const metricsHistory = [];
 const metricsHistoryLimit = 60;
+let metricChipDetailsByType = {
+    cpu: [],
+    ram: [],
+    gpu: [],
+    npu: [],
+};
+
+function numberOrNull(value) {
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatGiBFromBytes(value) {
+    const bytes = numberOrNull(value);
+    if (bytes === null || bytes <= 0) return null;
+    const gib = bytes / (1024 ** 3);
+    return `${gib >= 10 ? gib.toFixed(0) : gib.toFixed(1)} GiB`;
+}
+
+function formatInstalledMemory(platform) {
+    if (!platform || !platform.system_memory) return null;
+    const installedGiB = numberOrNull(platform.system_memory.installed_gib);
+    if (installedGiB === null || installedGiB <= 0) return null;
+    const value = Number.isInteger(installedGiB) ? installedGiB : installedGiB.toFixed(2);
+    return `${value} GiB RAM`;
+}
+
+function hasOpenvinoGpuInference(device) {
+    return Array.isArray(device && device.sw_functional_capabilities)
+        && device.sw_functional_capabilities.includes("openvino_gpu_inference");
+}
+
+function getCapabilitiesUrl() {
+    const cfg = window.RUNTIME_CONFIG || {};
+    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+    const host = window.location.hostname;
+    const port = cfg.metricsServicePort || window.METRICS_SERVICE_PORT || "9090";
+    return `${protocol}//${host}:${port}/api/v1/capabilities?profile=minimal`;
+}
+
+async function fetchSystemCapabilities() {
+    try {
+        const resp = await fetch(getCapabilitiesUrl(), { method: "GET" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const devices = Array.isArray(data && data.devices) ? data.devices : null;
+        if (!devices) throw new Error("Invalid capability response");
+
+        return {
+            ...data,
+            has_gpu: devices.some((device) => {
+                const category = device && device.category;
+                return device && device.present === true
+                    && (category === "igpu" || category === "dgpu")
+                    && hasOpenvinoGpuInference(device);
+            }),
+            has_npu: devices.some((device) => device && device.present === true && device.category === "npu"),
+        };
+    } catch (_err) {
+        return {
+            has_gpu: null,
+            has_npu: null,
+            devices: [],
+            platform: null,
+        };
+    }
+}
+
+function deviceName(device, fallback) {
+    const name = device && device.commercial_reference;
+    return typeof name === "string" && name.trim() ? name.trim() : fallback;
+}
+
+function buildDetailLinesFromDevice(device) {
+    const lines = [];
+    if (!device) return lines;
+
+    if (device.vendor) lines.push(`Vendor: ${device.vendor}`);
+    if (device.category) lines.push(`Category: ${String(device.category).toUpperCase()}`);
+
+    const driver = device.details && device.details.driver_name;
+    if (driver) lines.push(`Driver: ${driver}`);
+
+    const memory = device.details && device.details.memory ? device.details.memory.total_bytes : null;
+    const memoryLabel = formatGiBFromBytes(memory);
+    if (memoryLabel) lines.push(`Memory: ${memoryLabel}`);
+
+    return lines;
+}
+
+function buildMetricChipDetailMap(capabilities) {
+    const rawDevices = Array.isArray(capabilities && capabilities.devices) ? capabilities.devices : [];
+    const devices = rawDevices.filter((device) => device && device.present === true);
+    const cpu = devices.find((device) => device.category === "cpu");
+    const gpus = devices.filter((device) => {
+        const category = device.category;
+        return (category === "igpu" || category === "dgpu") && hasOpenvinoGpuInference(device);
+    });
+    const npu = devices.find((device) => device.category === "npu");
+
+    const map = {
+        cpu: cpu ? buildDetailLinesFromDevice(cpu) : [],
+        ram: [],
+        gpu: [],
+        npu: npu ? buildDetailLinesFromDevice(npu) : [],
+    };
+
+    const installedMemory = formatInstalledMemory(capabilities && capabilities.platform ? capabilities.platform : null);
+    if (installedMemory) {
+        map.ram.push(`Installed memory: ${installedMemory}`);
+    }
+    if (Array.isArray(gpus) && gpus.length > 0) {
+        const names = gpus.map((device) => deviceName(device, "GPU"));
+        map.gpu.push(`Detected GPUs: ${names.join(", ")}`);
+        gpus.forEach((device) => {
+            buildDetailLinesFromDevice(device).forEach((line) => {
+                if (!map.gpu.includes(line)) {
+                    map.gpu.push(line);
+                }
+            });
+        });
+    }
+
+    return map;
+}
+
+function refreshMetricChipTooltips() {
+    const chips = Array.from(document.querySelectorAll(".metric-chip[data-chip]"));
+    if (chips.length === 0) return;
+
+    chips.forEach((chip) => {
+        const chipType = String(chip.dataset.chip || "").trim().toLowerCase();
+        const lines = metricChipDetailsByType[chipType] || [];
+        if (!Array.isArray(lines) || lines.length === 0) {
+            chip.removeAttribute("title");
+            return;
+        }
+
+        const tooltipText = `${chipType.toUpperCase()} details\n- ${lines.join("\n- ")}`;
+        chip.setAttribute("title", tooltipText);
+    });
+}
+
+async function loadSystemCapabilities() {
+    const capabilities = await fetchSystemCapabilities();
+    metricChipDetailsByType = buildMetricChipDetailMap(capabilities);
+    refreshMetricChipTooltips();
+}
 
 function readRuntimeConfigString(key, fallback = "Not configured") {
     const cfg = window.RUNTIME_CONFIG || {};
@@ -948,6 +1095,7 @@ document.addEventListener("keydown", (event) => {
 
 drawMetricsChart();
 initSettingsMenu();
+loadSystemCapabilities();
 connectMetricsStream();
 pollHealth();
 setInterval(pollHealth, 2000);

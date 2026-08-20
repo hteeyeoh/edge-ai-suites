@@ -323,6 +323,14 @@ body {
     padding: 0.32rem 0.45rem;
     font-size: 0.76rem;
     color: var(--muted);
+    cursor: default;
+}
+
+.metric-chip:focus-visible,
+.metric-chip:hover {
+    outline: none;
+    border-color: rgba(169, 204, 255, 0.45);
+    box-shadow: 0 0 0 2px rgba(47, 129, 247, 0.16);
 }
 
 .metric-chip strong {
