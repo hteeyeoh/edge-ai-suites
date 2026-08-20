@@ -91,6 +91,35 @@ def _close_quietly(container) -> None:
             pass
 
 
+def _encode_frame_jpeg_bytes(frame, *, max_width: int = 160) -> bytes:
+    """Encode an RGB24 frame ndarray as a small JPEG thumbnail byte string."""
+    if frame is None:
+        return b""
+
+    src = av.VideoFrame.from_ndarray(frame, format="rgb24")
+    src_w = int(src.width)
+    src_h = int(src.height)
+    if src_w <= 0 or src_h <= 0:
+        return b""
+
+    target_w = min(max_width, src_w)
+    target_h = max(1, int(round(target_w * src_h / src_w)))
+    resized = src.reformat(width=target_w, height=target_h, format="yuv420p")
+
+    codec = av.CodecContext.create("mjpeg", "w")
+    codec.width = resized.width
+    codec.height = resized.height
+    codec.pix_fmt = "yuvj420p"
+    codec.open()
+
+    packets = list(codec.encode(resized))
+    packets.extend(codec.encode(None))
+    jpeg_bytes = b"".join(bytes(packet) for packet in packets)
+    if not jpeg_bytes:
+        return b""
+    return jpeg_bytes
+
+
 @dataclass
 class StreamHealth:
     """Runtime snapshot for one stream."""
@@ -750,9 +779,24 @@ class StreamManager:
             if deep_enabled and frame_id is not None and parse_yes_no(caption):
                 segment_path = get_segment(frame_id) if get_segment else None
                 if segment_path:
+                    trigger_thumbnail_jpeg = b""
+                    try:
+                        trigger_thumbnail_jpeg = _encode_frame_jpeg_bytes(frame)
+                    except Exception as exc:  # noqa: BLE001 - best effort for sidecar enrichment
+                        logger.warning(
+                            "[%s] failed to encode trigger frame for frame_id=%s: %s",
+                            stream_id,
+                            frame_id,
+                            exc,
+                        )
                     try:
                         get_deep_analyzer().submit(
-                            stream_id, segment_path, alert_event, frame_id, caption
+                            stream_id=stream_id,
+                            segment_path=segment_path,
+                            alert_event=alert_event,
+                            frame_id=frame_id,
+                            trigger_caption=caption,
+                            trigger_thumbnail_jpeg=trigger_thumbnail_jpeg,
                         )
                     except Exception as exc:  # noqa: BLE001 - model may be missing/misconfigured
                         logger.error("[%s] deep analyzer disabled: %s", stream_id, exc)

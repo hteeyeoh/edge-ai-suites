@@ -717,6 +717,17 @@ body {
     white-space: nowrap;
 }
 
+.alert-drawer__row-thumb {
+    display: block;
+    width: 112px;
+    height: 63px;
+    margin-top: 0.25rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+    background: rgba(255, 255, 255, 0.03);
+}
+
 .alert-drawer__status {
     margin: 0.6rem 0 0;
     color: var(--muted);

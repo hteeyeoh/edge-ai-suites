@@ -471,10 +471,7 @@ async function openAlertDetail(streamId, frameId) {
         const entries = [
             ["Stream", data.stream_id || streamId],
             ["Alert", data.alert_event || "-"],
-            ["Caption", data.trigger_caption || "-"],
             ["Uploaded", data.uploaded_at ? new Date(data.uploaded_at).toLocaleString() : "-"],
-            ["Model", data.model || "-"],
-            ["Device", data.device || "-"],
             ["Frame", data.frame_id || "-"],
         ];
         if (alertModalMeta) {
@@ -514,12 +511,31 @@ function renderAlertRows(alerts, streamId) {
         const eventText = document.createElement("span");
         eventText.className = "alert-drawer__row-event";
         eventText.textContent = alert.alert_event || "Alert";
+
+        const thumbnailUrl = String(alert.thumbnail_url || "").trim();
         const captionText = document.createElement("span");
         captionText.className = "alert-drawer__row-caption";
-        captionText.textContent = alert.trigger_caption || "";
+        captionText.textContent = alert.trigger_caption || "Preview unavailable";
+
         button.appendChild(timeText);
         button.appendChild(eventText);
-        button.appendChild(captionText);
+
+        if (thumbnailUrl) {
+            const thumb = document.createElement("img");
+            thumb.className = "alert-drawer__row-thumb";
+            thumb.alt = `Trigger frame for ${alert.alert_event || "alert"}`;
+            thumb.loading = "lazy";
+            thumb.src = thumbnailUrl;
+            thumb.addEventListener("error", () => {
+                thumb.remove();
+                if (!button.contains(captionText)) {
+                    button.appendChild(captionText);
+                }
+            });
+            button.appendChild(thumb);
+        } else {
+            button.appendChild(captionText);
+        }
         button.addEventListener("click", () => openAlertDetail(streamId, alert.frame_id));
         li.appendChild(button);
         alertDrawerList.appendChild(li);

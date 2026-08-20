@@ -81,6 +81,7 @@ class _AnalysisJob:
     alert_event: str
     frame_id: uuid.UUID
     trigger_caption: str = ""
+    trigger_thumbnail_jpeg: bytes = b""
 
 
 def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
@@ -204,9 +205,17 @@ class DeepAnalyzerEngine:
         alert_event: str,
         frame_id: uuid.UUID,
         trigger_caption: str = "",
+        trigger_thumbnail_jpeg: bytes = b"",
     ) -> None:
         """Register a "Yes"-verdict segment for deep analysis, at most once."""
-        job = _AnalysisJob(stream_id, segment_path, alert_event, frame_id, trigger_caption)
+        job = _AnalysisJob(
+            stream_id=stream_id,
+            segment_path=segment_path,
+            alert_event=alert_event,
+            frame_id=frame_id,
+            trigger_caption=trigger_caption,
+            trigger_thumbnail_jpeg=trigger_thumbnail_jpeg,
+        )
         with self._lock:
             if segment_path in self._dedup:
                 return  # already queued/pending/done — don't waste compute
@@ -370,6 +379,7 @@ class DeepAnalyzerEngine:
                 alert_event=job.alert_event,
                 frame_id=job.frame_id,
                 trigger_caption=job.trigger_caption,
+                trigger_thumbnail_jpeg=job.trigger_thumbnail_jpeg,
                 description=description,
                 metrics=metrics,
                 deep_model=settings.DEEP_ANALYZER_MODEL,

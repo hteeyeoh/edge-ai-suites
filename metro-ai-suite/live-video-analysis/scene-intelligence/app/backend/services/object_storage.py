@@ -36,8 +36,8 @@ class SeaweedFSStorage:
         self._lock = threading.Lock()
         self._client = None
         self._bucket_ready = False
-        # Runs the video and sidecar uploads concurrently instead of back-to-back.
-        self._upload_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seaweedfs-upload")
+        # Runs video, sidecar, and thumbnail uploads concurrently.
+        self._upload_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="seaweedfs-upload")
 
         self._client = self._create_client()
         # Pre-create/verify the bucket once during initialization.
@@ -186,12 +186,13 @@ class SeaweedFSStorage:
             retention_days,
         )
 
-    def _build_object_keys(self, stream_id: str, segment_path: str, frame_id: uuid.UUID) -> tuple[str, str]:
+    def _build_object_keys(self, stream_id: str, segment_path: str, frame_id: uuid.UUID) -> tuple[str, str, str]:
         base_name = f"{Path(segment_path).stem}-{frame_id}"
         root = stream_id
         video_key = f"{root}/{base_name}.mp4"
         sidecar_key = f"{root}/{base_name}.analysis.json"
-        return video_key, sidecar_key
+        thumbnail_key = f"{root}/{base_name}.thumb.jpg"
+        return video_key, sidecar_key, thumbnail_key
 
     def upload_segment_and_metadata(
         self,
@@ -205,12 +206,14 @@ class SeaweedFSStorage:
         deep_model: str,
         deep_device: str,
         trigger_caption: str = "",
+        trigger_thumbnail_jpeg: bytes = b"",
     ) -> dict[str, Any] | None:
         if not os.path.isfile(segment_path):
             logger.warning("[%s] seaweedfs upload skipped; segment not found: %s", stream_id, segment_path)
             return None
 
-        video_key, sidecar_key = self._build_object_keys(stream_id, segment_path, frame_id)
+        video_key, sidecar_key, thumbnail_key = self._build_object_keys(stream_id, segment_path, frame_id)
+        has_thumbnail = bool(trigger_thumbnail_jpeg)
         metadata = {
             "stream_id": self._to_s3_metadata_value(stream_id),
             "frame_id": self._to_s3_metadata_value(frame_id),
@@ -220,6 +223,7 @@ class SeaweedFSStorage:
             "analyzed_at": self._to_s3_metadata_value(datetime.now(timezone.utc).isoformat()),
             "frames_sampled": self._to_s3_metadata_value(metrics.get("frames_sampled", "")),
             "analysis_sidecar_key": sidecar_key,
+            "thumbnail_object_key": thumbnail_key if has_thumbnail else "",
         }
 
         def _upload_video() -> None:
@@ -245,6 +249,7 @@ class SeaweedFSStorage:
             "device": deep_device,
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
             "video_object_key": video_key,
+            "thumbnail_object_key": thumbnail_key if has_thumbnail else "",
             "sidecar_key": sidecar_key,
         }
         sidecar_body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
@@ -257,10 +262,24 @@ class SeaweedFSStorage:
                 ContentType="application/json",
             )
 
-        video_future = self._upload_executor.submit(self._run_with_retries, _upload_video, "upload_video")
-        sidecar_future = self._upload_executor.submit(self._run_with_retries, _upload_sidecar, "upload_sidecar")
-        video_future.result()
-        sidecar_future.result()
+        def _upload_thumbnail() -> None:
+            self._client.put_object(
+                Bucket=settings.SEAWEEDFS_BUCKET,
+                Key=thumbnail_key,
+                Body=trigger_thumbnail_jpeg,
+                ContentType="image/jpeg",
+            )
+
+        futures = [
+            self._upload_executor.submit(self._run_with_retries, _upload_video, "upload_video"),
+            self._upload_executor.submit(self._run_with_retries, _upload_sidecar, "upload_sidecar"),
+        ]
+        if has_thumbnail:
+            futures.append(
+                self._upload_executor.submit(self._run_with_retries, _upload_thumbnail, "upload_thumbnail")
+            )
+        for future in futures:
+            future.result()
 
         logger.info(
             "[%s] seaweedfs upload complete bucket=%s key=%s sidecar=%s",
