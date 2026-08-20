@@ -184,7 +184,7 @@ class Settings:
 
     # Multi-frame confirmation prompt; {event} is substituted with the
     # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
-    DEEP_ANALYZER_PROMPT_TEMPLATE: str = "Explain the video."
+    DEEP_ANALYZER_PROMPT_TEMPLATE: str = "You are an expert video analysis assistant. Analyze the provided sequence of video frames chronologically. Summarize it concisely."
 
     # ---- SeaweedFS object storage (S3-compatible) ----
     # Deep-analyzer uploads finalized segment videos and stores
