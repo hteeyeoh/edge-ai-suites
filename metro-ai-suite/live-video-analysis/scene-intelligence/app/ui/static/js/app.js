@@ -14,6 +14,12 @@ const settingsToggle = document.getElementById("settings-toggle");
 const settingsPanel = document.getElementById("settings-panel");
 const settingsVlmModel = document.getElementById("settings-vlm-model");
 const settingsVlmDevice = document.getElementById("settings-vlm-device");
+const settingsVlmMaxTokens = document.getElementById("settings-vlm-max-tokens");
+const settingsDeepAnalyzerGroup = document.getElementById("settings-deep-analyzer-group");
+const settingsDeepModel = document.getElementById("settings-deep-model");
+const settingsDeepDevice = document.getElementById("settings-deep-device");
+const settingsDeepMaxFrames = document.getElementById("settings-deep-max-frames");
+const settingsDeepMaxTokens = document.getElementById("settings-deep-max-tokens");
 
 const alertDrawer = document.getElementById("alert-drawer");
 const alertDrawerStream = document.getElementById("alert-drawer-stream");
@@ -57,6 +63,17 @@ function readRuntimeConfigString(key, fallback = "Not configured") {
     return text || fallback;
 }
 
+function readRuntimeConfigBool(key, fallback = false) {
+    const cfg = window.RUNTIME_CONFIG || {};
+    const value = cfg[key];
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === "boolean") return value;
+    const normalized = String(value).trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) return true;
+    if (["0", "false", "no", "off"].includes(normalized)) return false;
+    return fallback;
+}
+
 function setSettingsOpen(open) {
     if (!settingsToggle || !settingsPanel) return;
     settingsPanel.classList.toggle("settings-panel--hidden", !open);
@@ -67,10 +84,32 @@ function initSettingsMenu() {
     if (!settingsToggle || !settingsPanel) return;
 
     if (settingsVlmModel) {
-        settingsVlmModel.textContent = readRuntimeConfigString("vlmModel");
+        settingsVlmModel.textContent = readRuntimeConfigString("alertVlmModel");
     }
     if (settingsVlmDevice) {
-        settingsVlmDevice.textContent = readRuntimeConfigString("vlmDevice");
+        settingsVlmDevice.textContent = readRuntimeConfigString("alertVlmDevice");
+    }
+    if (settingsVlmMaxTokens) {
+        settingsVlmMaxTokens.textContent = readRuntimeConfigString("alertVlmMaxTokens");
+    }
+
+    const deepAnalyzerEnabled = readRuntimeConfigBool("deepAnalyzerEnabled", false);
+    if (settingsDeepAnalyzerGroup) {
+        settingsDeepAnalyzerGroup.hidden = !deepAnalyzerEnabled;
+    }
+    if (deepAnalyzerEnabled) {
+        if (settingsDeepModel) {
+            settingsDeepModel.textContent = readRuntimeConfigString("deepAnalyzerModel");
+        }
+        if (settingsDeepDevice) {
+            settingsDeepDevice.textContent = readRuntimeConfigString("deepAnalyzerDevice");
+        }
+        if (settingsDeepMaxFrames) {
+            settingsDeepMaxFrames.textContent = readRuntimeConfigString("deepAnalyzerMaxFrames");
+        }
+        if (settingsDeepMaxTokens) {
+            settingsDeepMaxTokens.textContent = readRuntimeConfigString("deepAnalyzerMaxTokens");
+        }
     }
 
     settingsToggle.addEventListener("click", (event) => {
@@ -432,12 +471,6 @@ function createCard(stream) {
     alertBell.innerHTML = '\uD83D\uDD14<span class="stream-alert-bell__badge" hidden>0</span>';
     alertBell.setAttribute("aria-label", "View alert history");
 
-    const infoButton = document.createElement("button");
-    infoButton.className = "stream-info-btn";
-    infoButton.type = "button";
-    infoButton.textContent = "i";
-    infoButton.setAttribute("aria-label", "Show alert event details");
-
     const alertDetails = document.createElement("p");
     alertDetails.className = "stream-alert-details stream-alert-details--hidden";
 
@@ -462,7 +495,6 @@ function createCard(stream) {
     frame.appendChild(overlay);
     head.appendChild(idText);
     actions.appendChild(alertBell);
-    actions.appendChild(infoButton);
     actions.appendChild(stopButton);
     head.appendChild(actions);
     card.appendChild(head);
@@ -482,7 +514,6 @@ function createCard(stream) {
         alertBell,
         alertCountSeen: null,
         alertPulseTimeout: null,
-        infoButton,
         vlmMetrics,
         stopButton,
         playback: null,
@@ -496,12 +527,6 @@ function createCard(stream) {
     });
     stopButton.addEventListener("click", () => {
         stopStream(stream.stream_id, stopButton);
-    });
-    infoButton.addEventListener("click", () => {
-        const willShow = player.alertDetails.classList.contains("stream-alert-details--hidden");
-        player.alertDetails.classList.toggle("stream-alert-details--hidden", !willShow);
-        infoButton.classList.toggle("stream-info-btn--active", willShow);
-        infoButton.setAttribute("aria-expanded", String(willShow));
     });
     alertBell.addEventListener("click", () => {
         alertBell.classList.remove("stream-alert-bell--pulse");
@@ -547,19 +572,9 @@ function syncPlayerCard(player, stream) {
     player.stream = stream;
     player.meta.textContent = stream.url || "";
     if (player.alertDetails) {
-        player.alertDetails.textContent = formatAlertEventDetails(stream);
-    }
-    if (player.infoButton) {
         const hasAlertEvent = Boolean((stream.alert_event || "").trim());
-        player.infoButton.disabled = !hasAlertEvent;
-        player.infoButton.title = hasAlertEvent
-            ? "Show alert event details"
-            : "No alert event details";
-        if (!hasAlertEvent) {
-            player.alertDetails.classList.add("stream-alert-details--hidden");
-            player.infoButton.classList.remove("stream-info-btn--active");
-            player.infoButton.setAttribute("aria-expanded", "false");
-        }
+        player.alertDetails.textContent = formatAlertEventDetails(stream);
+        player.alertDetails.classList.toggle("stream-alert-details--hidden", !hasAlertEvent);
     }
     const alertDetected = isAlertDetected(stream.caption);
     player.card.classList.toggle("stream-card--alert", alertDetected);

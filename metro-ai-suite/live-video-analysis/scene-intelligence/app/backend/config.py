@@ -86,17 +86,19 @@ class Settings:
     # Metrics-manager SSE port used by the UI device-usage panel.
     METRICS_SERVICE_PORT: int = _int("METRICS_SERVICE_PORT", 9090)
 
-    # ---- VLM inference (OpenVINO GenAI) ----
+    # ---- VLM inference (OpenVINO GenAI) Configuration for Alert Pipeline ----
     # Each stream decodes sampled frames and captions them with the
     # OpenVINO GenAI VLM pipeline.
 
-    # Root of the mounted model tree. Models are organised per device as
+    # Root of the mounted model tree. Fixed to /models to match container
+    # volume mounts and shared by both VLM and deep-analyzer pipelines.
+    # Models are organised as
     # <VLM_MODELS_DIR>/<device>/<VLM_MODEL>, e.g. /models/cpu/InternVL2-1B.
-    VLM_MODELS_DIR: str = os.getenv("VLM_MODELS_DIR", "/models")
-    VLM_MODEL: str = os.getenv("VLM_MODEL", "InternVL2-1B")
+    VLM_MODELS_DIR: str = "/models"
+    ALERT_VLM_MODEL: str = os.getenv("ALERT_VLM_MODEL", "InternVL2-1B")
 
     # Inference device: CPU, GPU or NPU (selects the matching model subfolder).
-    VLM_DEVICE: str = os.getenv("VLM_DEVICE", "CPU")
+    ALERT_VLM_DEVICE: str = os.getenv("ALERT_VLM_DEVICE", "NPU")
 
     # Alert prompt template used to construct the final VLM prompt from a
     # user-provided alert event (e.g. "fire", "accident").
@@ -108,10 +110,10 @@ class Settings:
     )
 
     # Seconds between inferences per stream and the token budget per caption.
-    VLM_INTERVAL: float = _float("VLM_INTERVAL", 5.0)
-    VLM_MAX_TOKENS: int = _int("VLM_MAX_TOKENS", 128)
+    ALERT_VLM_INTERVAL: float = _float("ALERT_VLM_INTERVAL", 2.0)
+    ALERT_VLM_MAX_TOKENS: int = _int("ALERT_VLM_MAX_TOKENS", 20)
 
-    # VLM NPU-specific configuration. Only used when VLM_DEVICE=NPU.
+    # VLM NPU-specific configuration. Only used when runnning VLM inference on NPU device.
     NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 1024)
     NPU_MIN_RESPONSE_LEN = _int("NPU_MIN_RESPONSE_LEN", 512)
 
@@ -155,9 +157,8 @@ class Settings:
     # multi-frame confirmation. Independent pipeline/device from VLM_*.
     DEEP_ANALYZER_ENABLED: bool = _bool("DEEP_ANALYZER_ENABLED", True)
 
-    # Model tree layout mirrors VLM_MODELS_DIR/VLM_MODEL:
-    # <DEEP_ANALYZER_MODELS_DIR>/<device>/<DEEP_ANALYZER_MODEL>.
-    DEEP_ANALYZER_MODELS_DIR: str = os.getenv("DEEP_ANALYZER_MODELS_DIR", "/models")
+    # Model tree layout reuses VLM_MODELS_DIR:
+    # <VLM_MODELS_DIR>/<device>/<DEEP_ANALYZER_MODEL>.
     DEEP_ANALYZER_MODEL: str = os.getenv("DEEP_ANALYZER_MODEL", "Qwen3.5-2B-int4-ov")
     DEEP_ANALYZER_DEVICE: str = os.getenv("DEEP_ANALYZER_DEVICE", "GPU")
 

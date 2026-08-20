@@ -72,8 +72,8 @@ class VLMEngine:
         self._gen_config = None
         self._model_path = os.path.join(
             settings.VLM_MODELS_DIR,
-            settings.VLM_DEVICE.lower(),
-            settings.VLM_MODEL,
+            settings.ALERT_VLM_DEVICE.lower(),
+            settings.ALERT_VLM_MODEL,
         )
         self._load()
         self._metrics_debug_logged = False
@@ -94,27 +94,27 @@ class VLMEngine:
 
         logger.info(
             "Loading VLM '%s' on %s from %s",
-            settings.VLM_MODEL,
-            settings.VLM_DEVICE,
+            settings.ALERT_VLM_MODEL,
+            settings.ALERT_VLM_DEVICE,
             self._model_path,
         )
         pipeline_config = None
-        if str(settings.VLM_DEVICE).upper() == "NPU":
+        if str(settings.ALERT_VLM_DEVICE).upper() == "NPU":
             pipeline_config = {
                 "MAX_PROMPT_LEN": settings.NPU_MAX_PROMPT_LEN,
                 "MIN_RESPONSE_LEN": settings.NPU_MIN_RESPONSE_LEN,
             }
 
         if pipeline_config is None:
-            self._pipe = ov_genai.VLMPipeline(self._model_path, settings.VLM_DEVICE)
+            self._pipe = ov_genai.VLMPipeline(self._model_path, settings.ALERT_VLM_DEVICE)
         else:
             self._pipe = ov_genai.VLMPipeline(
                 self._model_path,
-                settings.VLM_DEVICE,
+                settings.ALERT_VLM_DEVICE,
                 **pipeline_config,
             )
         self._gen_config = ov_genai.GenerationConfig()
-        self._gen_config.max_new_tokens = settings.VLM_MAX_TOKENS
+        self._gen_config.max_new_tokens = settings.ALERT_VLM_MAX_TOKENS
         logger.info("VLM pipeline ready")
 
     @staticmethod

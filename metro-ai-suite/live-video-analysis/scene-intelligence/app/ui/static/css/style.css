@@ -87,6 +87,41 @@ body {
     letter-spacing: 0.55px;
 }
 
+.settings-group {
+    margin: 0 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0f141b;
+    overflow: hidden;
+}
+
+.settings-group:last-child {
+    margin-bottom: 0;
+}
+
+.settings-group summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.58rem 0.62rem;
+    color: #c8d1da;
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.settings-group summary::-webkit-details-marker {
+    display: none;
+}
+
+.settings-group summary::after {
+    content: "▾";
+    float: right;
+    color: var(--muted);
+}
+
+.settings-group:not([open]) summary::after {
+    content: "▸";
+}
+
 .settings-row {
     display: flex;
     justify-content: space-between;
@@ -95,9 +130,13 @@ body {
     padding: 0.52rem 0.56rem;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: #0f141b;
+    background: #10161d;
     font-size: 0.85rem;
     margin-bottom: 0.45rem;
+}
+
+.settings-group .settings-row {
+    margin: 0 0.45rem 0.45rem;
 }
 
 .settings-row:last-child {
@@ -463,10 +502,13 @@ body {
 }
 
 @keyframes alert-bell-pulse {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: scale(1);
         box-shadow: 0 0 0 0 rgba(248, 81, 73, 0.55);
     }
+
     50% {
         transform: scale(1.22);
         box-shadow: 0 0 0 6px rgba(248, 81, 73, 0);
@@ -474,41 +516,19 @@ body {
 }
 
 @keyframes alert-bell-ring {
-    0%, 100% {
+
+    0%,
+    100% {
         transform: rotate(0deg);
     }
+
     25% {
         transform: rotate(-14deg);
     }
+
     75% {
         transform: rotate(14deg);
     }
-}
-
-.stream-info-btn {
-    width: 1.7rem;
-    height: 1.7rem;
-    border: 1px solid rgba(47, 129, 247, 0.6);
-    background: rgba(47, 129, 247, 0.12);
-    color: #a9ccff;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    line-height: 1;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.stream-info-btn:hover {
-    background: rgba(47, 129, 247, 0.22);
-}
-
-.stream-info-btn--active {
-    background: rgba(47, 129, 247, 0.28);
-}
-
-.stream-info-btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
 }
 
 .stream-alert-details {

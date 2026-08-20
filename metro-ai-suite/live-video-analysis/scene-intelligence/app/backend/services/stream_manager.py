@@ -397,7 +397,7 @@ class StreamManager:
         # Hoist settings lookups, bound methods and globals into locals: these
         # are read once per frame otherwise, and Python resolves each one at
         # runtime through a dict.
-        vlm_interval = settings.VLM_INTERVAL
+        vlm_interval = settings.ALERT_VLM_INTERVAL
         seg_seconds = settings.SEGMENT_TIME_SECONDS
         rtsp_timeout = settings.RTSP_TIMEOUT
         stream_id = self.stream_id

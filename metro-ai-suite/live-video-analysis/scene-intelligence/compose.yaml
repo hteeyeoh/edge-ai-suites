@@ -135,18 +135,16 @@ services:
       - WEBRTC_SIGNALING_PORT=${WEBRTC_SIGNALING_PORT:-8889}
       - METRICS_SERVICE_PORT=${METRICS_SERVICE_PORT:-9090}
       # ---- VLM inference (OpenVINO GenAI) ----
-      - VLM_MODELS_DIR=/models
-      - VLM_MODEL=${VLM_MODEL:-InternVL2-1B}
-      - VLM_DEVICE=${VLM_DEVICE:-CPU}
-      - VLM_INTERVAL=${VLM_INTERVAL:-5.0}
-      - VLM_MAX_TOKENS=${VLM_MAX_TOKENS:-100}
+      - ALERT_VLM_MODEL=${ALERT_VLM_MODEL:-InternVL2-1B}
+      - ALERT_VLM_DEVICE=${ALERT_VLM_DEVICE:-NPU}
+      - ALERT_VLM_INTERVAL=${ALERT_VLM_INTERVAL:-2.0}
+      - ALERT_VLM_MAX_TOKENS=${ALERT_VLM_MAX_TOKENS:-20}
       - SEGMENT_DIM_1_1=${SEGMENT_DIM_1_1:-448x448}
       - SEGMENT_DIM_4_3=${SEGMENT_DIM_4_3:-512x384}
       - SEGMENT_DIM_16_9=${SEGMENT_DIM_16_9:-576x320}
       - MAX_STREAMS=${MAX_STREAMS:-8}
       # ---- Deep analyzer (multi-frame follow-up on a "Yes" alert verdict) ----
       - DEEP_ANALYZER_ENABLED=${DEEP_ANALYZER_ENABLED:-true}
-      - DEEP_ANALYZER_MODELS_DIR=/models
       - DEEP_ANALYZER_MODEL=${DEEP_ANALYZER_MODEL:-Qwen3.5-2B-int4-ov}
       - DEEP_ANALYZER_DEVICE=${DEEP_ANALYZER_DEVICE:-GPU}
       - DEEP_ANALYZER_MAX_FRAMES=${DEEP_ANALYZER_MAX_FRAMES:-8}
@@ -173,7 +171,8 @@ services:
       # seconds (default: 50 * 15s = 750s / ~12.5 min).
       - SEGMENT_MAX_ON_DISK=${SEGMENT_MAX_ON_DISK:-50}
     volumes:
-      # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>
+      # OpenVINO models, laid out per device: <root>/<cpu|gpu|npu>/<model>.
+      # Both VLM and deep-analyzer pipelines read from this shared /models root.
       - "./ov_models:/models:ro"
       # Rolling .mp4 segments written by the frame registry. Bind-mounted so
       # segments remain visible to deep-analysis process
@@ -181,7 +180,7 @@ services:
       # path (e.g. /dev/shm/...) for in-memory storage, or a real disk path
       # for persistence across restarts.
       - "${HOST_SEGMENTS_DIR:-./segments}:/app/segments"
-    # Intel GPU/NPU access for accelerated inference (VLM_DEVICE=GPU or NPU).
+    # Intel GPU/NPU access for accelerated inference (ALERT_VLM_DEVICE=GPU or NPU).
     # Harmless for CPU inference; requires the host Intel compute runtime.
     devices:
       - "/dev/dri:/dev/dri"

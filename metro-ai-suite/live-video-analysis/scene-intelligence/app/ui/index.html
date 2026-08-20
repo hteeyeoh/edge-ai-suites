@@ -25,14 +25,40 @@
             <div id="settings-panel" class="settings-panel settings-panel--hidden" role="dialog"
                 aria-label="VLM settings">
                 <h2>Settings</h2>
-                <div class="settings-row">
-                    <span>Vision model</span>
-                    <strong id="settings-vlm-model">-</strong>
-                </div>
-                <div class="settings-row">
-                    <span>Inference Device</span>
-                    <strong id="settings-vlm-device">-</strong>
-                </div>
+                <details class="settings-group" open>
+                    <summary>Alert Pipeline Settings</summary>
+                    <div class="settings-row">
+                        <span>Vision model</span>
+                        <strong id="settings-vlm-model">-</strong>
+                    </div>
+                    <div class="settings-row">
+                        <span>Inference Device</span>
+                        <strong id="settings-vlm-device">-</strong>
+                    </div>
+                    <div class="settings-row">
+                        <span>Max Tokens</span>
+                        <strong id="settings-vlm-max-tokens">-</strong>
+                    </div>
+                </details>
+                <details id="settings-deep-analyzer-group" class="settings-group" open>
+                    <summary>Deep Analyzer Pipeline Settings</summary>
+                    <div class="settings-row">
+                        <span>Vision model</span>
+                        <strong id="settings-deep-model">-</strong>
+                    </div>
+                    <div class="settings-row">
+                        <span>Inference Device</span>
+                        <strong id="settings-deep-device">-</strong>
+                    </div>
+                    <div class="settings-row">
+                        <span>Max Frames</span>
+                        <strong id="settings-deep-max-frames">-</strong>
+                    </div>
+                    <div class="settings-row">
+                        <span>Max Tokens</span>
+                        <strong id="settings-deep-max-tokens">-</strong>
+                    </div>
+                </details>
             </div>
         </div>
     </header>

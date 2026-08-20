@@ -46,13 +46,13 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m appuser
 
-# Install Intel GPU user-mode drivers (OpenVINO VLM_DEVICE=GPU).
+# Install Intel GPU user-mode drivers.
 COPY scripts/install_ubuntu_gpu_drivers.sh /tmp/install_gpu_drivers.sh
 RUN chmod +x /tmp/install_gpu_drivers.sh \
     && /tmp/install_gpu_drivers.sh \
     && rm -f /tmp/install_gpu_drivers.sh && rm -rf /var/lib/apt/lists/* /tmp/*
 
-# Install the Intel NPU user-space stack (OpenVINO VLM_DEVICE=NPU): the NPU
+# Install the Intel NPU user-space stack: the NPU
 # driver/compiler/firmware plus the oneAPI Level Zero loader (libze1). The
 # loader is mandatory — without libze_loader.so.1 the NPU plugin cannot
 # enumerate the device. The final test fails the build if it is missing.

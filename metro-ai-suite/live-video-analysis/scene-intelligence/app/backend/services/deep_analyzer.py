@@ -153,7 +153,7 @@ class DeepAnalyzerEngine:
 
     def _load(self) -> None:
         model_path = os.path.join(
-            settings.DEEP_ANALYZER_MODELS_DIR,
+            settings.VLM_MODELS_DIR,
             settings.DEEP_ANALYZER_DEVICE.lower(),
             settings.DEEP_ANALYZER_MODEL,
         )

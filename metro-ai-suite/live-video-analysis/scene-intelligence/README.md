@@ -124,9 +124,9 @@ All runtime settings are controlled by environment variables in app/backend/conf
 | WEBRTC_SIGNALING_PORT | 8889 | MediaMTX WebRTC port |
 | METRICS_SERVICE_PORT | 9090 | Metrics SSE service port |
 | MAX_STREAMS | 8 | Max concurrent streams |
-| VLM_MODEL | InternVL2-1B | Single-frame VLM model name |
-| VLM_DEVICE | CPU | Device for VLM (CPU/GPU/NPU) |
-| VLM_INTERVAL | 5.0 | Seconds between inference attempts |
+| ALERT_VLM_MODEL | InternVL2-1B | Single-frame VLM model name |
+| ALERT_VLM_DEVICE | CPU | Device for VLM (CPU/GPU/NPU) |
+| ALERT_VLM_INTERVAL | 5.0 | Seconds between inference attempts |
 | SEGMENT_TIME_SECONDS | 15 | Segment duration |
 | FRAME_SAMPLE_FPS | 1 | Frame sampling rate for registry |
 | SEGMENT_MAX_ON_DISK | 50 | Per-stream segment retention cap |
@@ -136,6 +136,8 @@ All runtime settings are controlled by environment variables in app/backend/conf
 | SEAWEEDFS_ENDPOINT_URL | http://seaweedfs:8333 | S3-compatible endpoint |
 | SEAWEEDFS_BUCKET | scene-intelligence | Alert artifact bucket |
 | S3_RETENTION_DAYS | 10 | Object retention/lifecycle window |
+
+Model path note: both alert VLM and deep analyzer resolve models from the same fixed root (`/models`) via `VLM_MODELS_DIR`, with layout `<root>/<device>/<model>`.
 
 ## Model Download (One Time)
 
