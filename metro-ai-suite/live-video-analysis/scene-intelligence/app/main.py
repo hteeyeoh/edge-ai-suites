@@ -13,11 +13,13 @@ import uvicorn
 from backend.config import settings
 from backend.config import setup_logging
 from backend.routes import build_alert_router
+from backend.routes import build_deep_metrics_router
 from backend.routes import build_health_router
 from backend.routes import build_registry_router
 from backend.routes import build_runtime_config_router
 from backend.routes import build_stream_router
 from backend.services.alert_index import get_alert_index
+from backend.services.deep_analyzer import get_deep_analyzer
 from backend.services.frame_registry import SegmentFrameRegistry
 from backend.services.stream_registry import StreamRegistry
 from botocore.config import Config
@@ -82,6 +84,7 @@ app.include_router(build_runtime_config_router(settings))
 app.include_router(build_registry_router(frame_registry))
 app.include_router(build_stream_router(registry, alert_index))
 app.include_router(build_alert_router(alert_index, _get_alert_s3_client, settings))
+app.include_router(build_deep_metrics_router(alert_index, get_deep_analyzer))
 
 
 _static_dir = os.path.join(_UI_DIR, "static")
