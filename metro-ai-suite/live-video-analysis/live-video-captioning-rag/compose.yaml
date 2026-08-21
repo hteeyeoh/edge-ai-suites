@@ -81,7 +81,7 @@ services:
       - ${RENDER_GROUP_ID:-1002}
     restart: unless-stopped
     healthcheck:
-      test: [ 'CMD-SHELL', 'curl -f http://localhost:8000/health || exit 1' ]
+      test: [ "CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').getcode()==200 else 1)" ]
       interval: 10s
       timeout: 10s
       retries: 40
@@ -289,6 +289,7 @@ services:
       # Embedding and vectordatabase
       - ENABLE_EMBEDDING=${ENABLE_EMBEDDING:-false}
       - LIVE_VIDEO_RAG_HOST_PORT=${LIVE_VIDEO_RAG_HOST_PORT:-4172}
+      - RAG_CHATBOT_MODE=${RAG_CHATBOT_MODE:-embedded}
       # NPU-specific token length controls for static-shape LLM pipelines.
       - NPU_MAX_PROMPT_LENGTH=${NPU_MAX_PROMPT_LENGTH:-1024}
       - NPU_MIN_RESPONSE_LENGTH=${NPU_MIN_RESPONSE_LENGTH:-128}
