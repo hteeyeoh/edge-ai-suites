@@ -17,23 +17,6 @@ def build_registry_router(frame_registry) -> APIRouter:
         """Get registry statistics"""
         return frame_registry.stats()
 
-    @router.get("/registry/streams/{stream_id}", summary="Get all records for a specific stream")
-    async def registry_streams(stream_id: str):
-        """Get all records for a specific stream"""
-        records = frame_registry.all(stream_id)
-        return {
-			"records": [
-				{
-					"frame_id": str(r.frame_id),
-					"stream_id": r.stream_id,
-					"segment_path": r.segment_path,
-					"pts_seconds": r.pts_seconds,
-					"created_ts": r.created_ts,
-				}
-				for r in records
-			]
-		}
-
     @router.get("/registry/stream/{stream_id}", summary="Get latest records for a specific stream")
     async def registry_stream(stream_id: str, limit: int = 50):
         """Get latest records for a specific stream"""

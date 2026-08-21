@@ -32,6 +32,7 @@ def build_stream_router(registry, alert_index) -> APIRouter:
                     "ttft_ms": act_stream.ttft_ms,
                     "tpot_ms": act_stream.tpot_ms,
                     "throughput_tps": act_stream.throughput_tps,
+                    "total_tokens_generated": act_stream.total_tokens_generated,
                     "alert_count": alert_index.count(manager.stream_id),
                 }
             )

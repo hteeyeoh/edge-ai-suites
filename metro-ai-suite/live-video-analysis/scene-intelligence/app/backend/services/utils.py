@@ -21,6 +21,7 @@ def _extract_perf_metrics(result: ov_genai.py_openvino_genai.VLMDecodedResults) 
             "ttft_ms": None,
             "tpot_ms": None,
             "throughput_tps": None,
+            "total_tokens_generated": None,
         }
 
     try:
@@ -44,6 +45,7 @@ def _extract_perf_metrics(result: ov_genai.py_openvino_genai.VLMDecodedResults) 
             "ttft_ms": float(perf_metrics.get_ttft().mean),
             "tpot_ms": float(perf_metrics.get_tpot().mean),
             "throughput_tps": float(perf_metrics.get_throughput().mean),
+            "total_tokens_generated": float(perf_metrics.get_num_generated_tokens()),
         }
     except Exception as exc:  # noqa: BLE001 - defend against API/version drift
         logger.warning("VLM perf_metrics accessors unavailable: %s", exc)
@@ -51,4 +53,5 @@ def _extract_perf_metrics(result: ov_genai.py_openvino_genai.VLMDecodedResults) 
             "ttft_ms": None,
             "tpot_ms": None,
             "throughput_tps": None,
+            "total_tokens_generated": None,
         }

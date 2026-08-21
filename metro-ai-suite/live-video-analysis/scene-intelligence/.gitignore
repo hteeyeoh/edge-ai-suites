@@ -4,4 +4,5 @@
 ov_models/
 shared/
 segments/
+results/
 *__pycache__*

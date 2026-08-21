@@ -101,7 +101,6 @@ Notes:
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | /registry/stats | Registry summary |
-| GET | /registry/streams/{stream_id} | Full registry records for stream |
 | GET | /registry/stream/{stream_id}?limit=50 | Latest registry records for stream |
 | GET | /registry/frame/{frame_id} | Lookup specific sampled frame record |
 

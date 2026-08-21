@@ -134,6 +134,7 @@ class StreamHealth:
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
     throughput_tps: Optional[float] = None
+    total_tokens_generated: Optional[float] = None
 
 
 class _SegmentCtx:
@@ -258,6 +259,7 @@ class StreamManager:
                 ttft_ms=self.health.ttft_ms,
                 tpot_ms=self.health.tpot_ms,
                 throughput_tps=self.health.throughput_tps,
+                total_tokens_generated=self.health.total_tokens_generated,
             )
 
     # ------------------------------------------------------------------ #
@@ -765,6 +767,7 @@ class StreamManager:
             ttft_ms = metrics.get("ttft_ms")
             tpot_ms = metrics.get("tpot_ms")
             throughput_tps = metrics.get("throughput_tps")
+            total_tokens_generated = metrics.get("total_tokens_generated")
             with health_lock:
                 self.health.caption = caption
                 self.health.caption_ts = caption_ts
@@ -774,6 +777,8 @@ class StreamManager:
                     self.health.tpot_ms = tpot_ms
                 if throughput_tps is not None:
                     self.health.throughput_tps = throughput_tps
+                if total_tokens_generated is not None:
+                    self.health.total_tokens_generated = total_tokens_generated
             logger.debug("[%s] caption: %s", stream_id, caption)
 
             if deep_enabled and frame_id is not None and parse_yes_no(caption):

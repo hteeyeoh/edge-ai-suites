@@ -143,6 +143,7 @@ class DeepAnalyzerEngine:
         # reclaiming a rotated-out segment so a slow/backed-up dispatch
         # thread can never have its file deleted out from under it.
         self._active: set[str] = set()
+        self._stats: dict[str, dict[str, int]] = {}
 
         self._queue: "queue.Queue[_AnalysisJob]" = queue.Queue()
         self._dispatch_thread = threading.Thread(
@@ -198,6 +199,26 @@ class DeepAnalyzerEngine:
     # Public API
     # ------------------------------------------------------------------ #
 
+    def _stream_stats(self, stream_id: str) -> dict[str, int]:
+        return self._stats.setdefault(
+            stream_id,
+            {
+                "submitted": 0,
+                "queued": 0,
+                "in_flight": 0,
+                "completed": 0,
+                "failed": 0,
+                "max_in_flight": 0,
+            },
+        )
+
+    def get_metrics(self, stream_id: str) -> dict[str, int]:
+        """Return a point-in-time deep-analyzer job snapshot for one stream."""
+        with self._lock:
+            stats = dict(self._stream_stats(stream_id))
+        stats["active"] = stats["queued"] + stats["in_flight"]
+        return stats
+
     def submit(
         self,
         stream_id: str,
@@ -221,6 +242,9 @@ class DeepAnalyzerEngine:
                 return  # already queued/pending/done — don't waste compute
             self._mark(self._dedup, segment_path)
             self._active.add(segment_path)
+            stats = self._stream_stats(stream_id)
+            stats["submitted"] += 1
+            stats["queued"] += 1
 
             if segment_path not in self._finalized:
                 # Still being written; hold until on_segment_finalized() fires.
@@ -260,14 +284,26 @@ class DeepAnalyzerEngine:
     def _dispatch_loop(self) -> None:
         while True:
             job = self._queue.get()
+            with self._lock:
+                stats = self._stream_stats(job.stream_id)
+                stats["queued"] = max(0, stats["queued"] - 1)
+                stats["in_flight"] += 1
+                stats["max_in_flight"] = max(stats["max_in_flight"], stats["in_flight"])
             try:
                 self._analyze(job)
+                with self._lock:
+                    self._stream_stats(job.stream_id)["completed"] += 1
             except Exception:  # noqa: BLE001 - keep the dispatcher alive
+                with self._lock:
+                    self._stream_stats(job.stream_id)["failed"] += 1
                 logger.exception(
                     "[%s] deep-analysis failed for segment=%s", job.stream_id, job.segment_path
                 )
             finally:
                 with self._lock:
+                    self._stream_stats(job.stream_id)["in_flight"] = max(
+                        0, self._stream_stats(job.stream_id)["in_flight"] - 1
+                    )
                     self._active.discard(job.segment_path)
 
     def _read_segment_frames(self, job: _AnalysisJob) -> np.ndarray:
