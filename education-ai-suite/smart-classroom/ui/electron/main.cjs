@@ -16,6 +16,19 @@ const { startServer } = require('./server.cjs');
 // native Window Controls Overlay buttons align with the app header.
 const TITLE_BAR_HEIGHT = 63;
 
+// The Window Controls Overlay strip is painted by OS, not by the page, so a
+// DOM overlay cannot dim it. The renderer reports which surface is on top and we
+// recolour the caption to match.
+const TITLE_BAR_THEMES = {
+  // App header.
+  default: { color: '#0071c5', symbolColor: '#ffffff' },
+  // Brand blue and white composited under 50% black.
+  dimmed: { color: '#003862', symbolColor: '#7f7f7f' },
+  // The report panel is a white sheet pinned to the right edge, full height, so
+  // it sits directly under the caption buttons.
+  light: { color: '#ffffff', symbolColor: '#5a6374' },
+};
+
 // ---------------------------------------------------------------------------
 // Native-menu localization
 // ---------------------------------------------------------------------------
@@ -187,6 +200,29 @@ async function createWindow() {
     if (menu) menu.popup({ window: mainWindow });
   });
 
+  // A dead renderer process cannot be caught by the in-page error boundary, so
+  // report it natively rather than leaving a blank window.
+  mainWindow.webContents.on('render-process-gone', async (_event, details) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'error',
+      title: 'Smart Classroom',
+      message: 'The interface process stopped unexpectedly.',
+      detail: `Reason: ${details.reason}${
+        Number.isInteger(details.exitCode) ? ` (exit code ${details.exitCode})` : ''
+      }\n\nBackend services are unaffected and keep running.`,
+      buttons: ['Reload', 'Quit'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) mainWindow.reload();
+    else app.quit();
+  });
+
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    console.error('[electron] preload script failed:', preloadPath, error);
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
@@ -206,6 +242,20 @@ if (!app.requestSingleInstanceLock()) {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    }
+  });
+
+  // Renderer reports the surface currently covering the caption area (a modal,
+  // the report panel, or nothing) so the overlay can be recoloured to match.
+  ipcMain.on('titlebar:setTheme', (event, theme) => {
+    if (process.platform === 'darwin') return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    const colors = TITLE_BAR_THEMES[theme] || TITLE_BAR_THEMES.default;
+    try {
+      win.setTitleBarOverlay({ ...colors, height: TITLE_BAR_HEIGHT });
+    } catch {
+      // Overlay unavailable on this platform/frame — leave the caption alone.
     }
   });
 

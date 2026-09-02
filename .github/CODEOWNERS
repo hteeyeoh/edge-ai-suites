@@ -7,7 +7,7 @@ LICENSE            @xwu2intel
 CONTRIBUTING.md    @xwu2intel
 CODE_OF_CONDUCT.md @xwu2intel
 SECURITY.md        @xwu2intel
-README.md          @xwu2intel
+README.md          @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 
 
 # ============================================================================
@@ -134,7 +134,7 @@ README.md          @xwu2intel
 /metro-ai-suite/agentic-smart-community/docs/       @Johere @lijiunderstand @llin60 @xwu2intel  @open-edge-platform/open-edge-platform-docs-write
 /metro-ai-suite/agentic-smart-community/README.md   @Johere @lijiunderstand @llin60 @xwu2intel  @open-edge-platform/open-edge-platform-docs-write
 
-/metro-ai-suite/enterprise-data-intelligence/            @Yongbozzz @myqi @llin60 @xwu2intel 
+/metro-ai-suite/enterprise-data-intelligence/            @Yongbozzz @myqi @llin60 @xwu2intel
 /metro-ai-suite/enterprise-data-intelligence/docs/       @Yongbozzz @myqi @llin60 @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 /metro-ai-suite/enterprise-data-intelligence/README.md   @Yongbozzz @myqi @llin60 @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 
@@ -167,9 +167,9 @@ README.md          @xwu2intel
 /federal-and-aerospace-ai-suite/                                             @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel
 /federal-and-aerospace-ai-suite/README.md                                    @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 
-/federal-and-aerospace-ai-suite/handheld-multi-modal/                        @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel
-/federal-and-aerospace-ai-suite/handheld-multi-modal/docs/                   @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel @open-edge-platform/open-edge-platform-docs-write
-/federal-and-aerospace-ai-suite/handheld-multi-modal/README.md               @rrajore @pperycz @jakubsikorski @ikyrycho @xwu2intel @open-edge-platform/open-edge-platform-docs-write
+/federal-and-aerospace-ai-suite/handheld-multi-modal/                        @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel
+/federal-and-aerospace-ai-suite/handheld-multi-modal/docs/                   @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel @open-edge-platform/open-edge-platform-docs-write
+/federal-and-aerospace-ai-suite/handheld-multi-modal/README.md               @rrajore @pperycz @jakubsikorski @ikyrycho @kpuczyns @xwu2intel @open-edge-platform/open-edge-platform-docs-write
 
 /federal-and-aerospace-ai-suite/deterministic-threat-detection/              @rrajore @sugnanprabhu @ajagadi1 @xwu2intel
 /federal-and-aerospace-ai-suite/deterministic-threat-detection/docs/         @rrajore @sugnanprabhu @ajagadi1 @xwu2intel @open-edge-platform/open-edge-platform-docs-write
