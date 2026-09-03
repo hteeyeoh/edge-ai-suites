@@ -68,6 +68,12 @@
         return `http://${window.location.hostname}:${cfg.liveVideoRagHostPort}`;
     }
 
+    function getEmbeddedChatUrl() {
+        const url = new URL(getChatUrl(), window.location.origin);
+        url.searchParams.set('theme', getCurrentTheme());
+        return url.toString();
+    }
+
     function getChatOrigin() {
         try {
             return new URL(getChatUrl(), window.location.origin).origin;
@@ -142,7 +148,7 @@
     function openEmbeddedChatPanel() {
         if (!els.chatPanel || !els.chatIframe) return false;
         if (!els.chatIframe.src) {
-            els.chatIframe.src = getChatUrl();
+            els.chatIframe.src = getEmbeddedChatUrl();
         }
         const opened = setChatPanelOpen(true);
         syncThemeToChatIframe();

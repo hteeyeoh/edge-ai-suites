@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for backend.llm."""
+"""Tests for backend.services.llm."""
 
 from pathlib import Path
 from types import ModuleType
@@ -27,10 +27,14 @@ class _FakeLLM:
 
 def _load_llm_module(monkeypatch, eos_token_id=42):
     backend_dir = Path(__file__).resolve().parents[1] / "backend"
-    module_path = backend_dir / "llm.py"
+    services_dir = backend_dir / "services"
+    module_path = services_dir / "llm.py"
 
     backend_pkg = ModuleType("backend")
     backend_pkg.__path__ = [str(backend_dir)]
+
+    services_pkg = ModuleType("backend.services")
+    services_pkg.__path__ = [str(services_dir)]
 
     cfg_mod = ModuleType("backend.config")
     cfg_mod.LLM_MODEL_ID = "test-model"
@@ -50,13 +54,14 @@ def _load_llm_module(monkeypatch, eos_token_id=42):
     lchf_mod.HuggingFacePipeline = _FakeHFPipeline
 
     monkeypatch.setitem(sys.modules, "backend", backend_pkg)
+    monkeypatch.setitem(sys.modules, "backend.services", services_pkg)
     monkeypatch.setitem(sys.modules, "backend.config", cfg_mod)
     monkeypatch.setitem(sys.modules, "langchain_huggingface", lchf_mod)
 
-    spec = importlib.util.spec_from_file_location("backend.llm", module_path)
+    spec = importlib.util.spec_from_file_location("backend.services.llm", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None and spec.loader is not None
-    sys.modules["backend.llm"] = module
+    sys.modules["backend.services.llm"] = module
     spec.loader.exec_module(module)
     return module, calls
 

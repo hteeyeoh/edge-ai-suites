@@ -29,7 +29,7 @@ def _load_embedding_wrapper_module(monkeypatch, embedding_length=0, no_proxy_val
     cfg_mod = ModuleType("backend.config")
     cfg_mod.EMBEDDING_LENGTH = embedding_length
 
-    logger_mod = ModuleType("backend.logger")
+    logger_mod = ModuleType("backend.utils.logger")
     logger_mod.logger = _DummyLogger()
 
     if no_proxy_value is not None:
@@ -38,7 +38,7 @@ def _load_embedding_wrapper_module(monkeypatch, embedding_length=0, no_proxy_val
     monkeypatch.setitem(sys.modules, "backend", backend_pkg)
     monkeypatch.setitem(sys.modules, "backend.services", services_pkg)
     monkeypatch.setitem(sys.modules, "backend.config", cfg_mod)
-    monkeypatch.setitem(sys.modules, "backend.logger", logger_mod)
+    monkeypatch.setitem(sys.modules, "backend.utils.logger", logger_mod)
 
     spec = importlib.util.spec_from_file_location("backend.services.embedding_wrapper", module_path)
     module = importlib.util.module_from_spec(spec)

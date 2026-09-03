@@ -15,6 +15,39 @@ class TestRootEndpoint:
         resp = client.get("/")
         assert "html" in resp.headers.get("content-type", "").lower()
 
+    def test_root_blocks_top_level_navigation_in_embedded_mode(self, embedded_client):
+        resp = embedded_client.get(
+            "/",
+            headers={
+                "accept": "text/html",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-dest": "document",
+            },
+        )
+        assert resp.status_code == 403
+
+    def test_root_allows_iframe_navigation_in_embedded_mode(self, embedded_client):
+        resp = embedded_client.get(
+            "/",
+            headers={
+                "accept": "text/html",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-dest": "iframe",
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_root_allows_dashboard_referrer_in_embedded_mode(self, embedded_client):
+        resp = embedded_client.get(
+            "/",
+            headers={
+                "accept": "text/html",
+                "sec-fetch-mode": "navigate",
+                "referer": "http://testserver:4173/",
+            },
+        )
+        assert resp.status_code == 200
+
 
 class TestRouteRegistration:
     """All public API routers are mounted."""

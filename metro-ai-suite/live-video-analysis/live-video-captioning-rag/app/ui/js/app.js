@@ -52,8 +52,14 @@
         ThemeManager.applyTheme(data.theme, els.themeToggle);
     }
 
+    function getEmbeddedInitialTheme() {
+        if (!isEmbedded()) return null;
+        const theme = new URLSearchParams(window.location.search).get('theme');
+        return theme === 'light' || theme === 'dark' ? theme : null;
+    }
+
     // Theme Setup
-    ThemeManager.applyTheme(ThemeManager.detectInitialTheme(), els.themeToggle);
+    ThemeManager.applyTheme(getEmbeddedInitialTheme() || ThemeManager.detectInitialTheme(), els.themeToggle);
     const embedded = isEmbedded();
     setEmbeddedModeClass(embedded);
     if (embedded && els.themeToggle) {

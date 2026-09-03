@@ -47,7 +47,7 @@ def _load_chain_module(monkeypatch):
     cfg_mod = ModuleType("backend.config")
     cfg_mod.LLM_MODEL_ID = "test-llm"
 
-    llm_mod = ModuleType("backend.llm")
+    llm_mod = ModuleType("backend.services.llm")
     llm_mod.initialize_llm = lambda: object()
 
     prompt_mod = ModuleType("backend.services.prompt")
@@ -56,16 +56,16 @@ def _load_chain_module(monkeypatch):
     embedding_mod = ModuleType("backend.services.embedding")
     embedding_mod.CaptionEmbeddings = _DummyCaptionEmbeddings
 
-    logger_mod = ModuleType("backend.logger")
+    logger_mod = ModuleType("backend.utils.logger")
     logger_mod.logger = _DummyLogger()
 
     monkeypatch.setitem(sys.modules, "backend", backend_pkg)
     monkeypatch.setitem(sys.modules, "backend.services", services_pkg)
     monkeypatch.setitem(sys.modules, "backend.config", cfg_mod)
-    monkeypatch.setitem(sys.modules, "backend.llm", llm_mod)
+    monkeypatch.setitem(sys.modules, "backend.services.llm", llm_mod)
     monkeypatch.setitem(sys.modules, "backend.services.prompt", prompt_mod)
     monkeypatch.setitem(sys.modules, "backend.services.embedding", embedding_mod)
-    monkeypatch.setitem(sys.modules, "backend.logger", logger_mod)
+    monkeypatch.setitem(sys.modules, "backend.utils.logger", logger_mod)
 
     spec = importlib.util.spec_from_file_location("backend.services.chain", module_path)
     module = importlib.util.module_from_spec(spec)
