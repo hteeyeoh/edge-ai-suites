@@ -80,12 +80,10 @@ services:
       EMBEDDING_DEVICE: ${EMBEDDING_DEVICE}
       EMBEDDING_USE_OV: ${EMBEDDING_USE_OV}
       EMBEDDING_OV_MODELS_DIR: ${EMBEDDING_OV_MODELS_DIR:-/app/ov_models}
-      DEFAULT_START_OFFSET_SEC: ${DEFAULT_START_OFFSET_SEC:-0}
-      DEFAULT_CLIP_DURATION: ${DEFAULT_CLIP_DURATION:--1}
-      DEFAULT_NUM_FRAMES: ${DEFAULT_NUM_FRAMES:-64}
       OV_PERFORMANCE_MODE: ${OV_PERFORMANCE_MODE:-LATENCY}
     devices:
       - /dev/dri:/dev/dri
+      - "${NPU_DEVICE_PATH:-/dev/null}:${NPU_DEVICE_PATH:-/dev/null}"
     group_add:
       - ${USER_GROUP_ID:-1000}
       - ${VIDEO_GROUP_ID:-44}
@@ -101,7 +99,6 @@ services:
       - rag_network
     volumes:
       - ov-models:/home/appuser/.cache/huggingface
-      #- data-prep:/tmp/dataprep
       - ov-models:${EMBEDDING_OV_MODELS_DIR:-/app/ov_models}
 
   vdms-vector-db:
