@@ -69,7 +69,7 @@ if [[ -e /dev/accel ]]; then
 fi
 
 HOST_SEGMENTS_DIR="$(awk -F= '$1 == "HOST_SEGMENTS_DIR" {print $2; exit}' "${ENV_EXAMPLE}")"
-HOST_SEGMENTS_DIR="${HOST_SEGMENTS_DIR:-/dev/shm/scene-intelligence-segments}"
+HOST_SEGMENTS_DIR="${HOST_SEGMENTS_DIR:-/dev/shm/scene-segments}"
 mkdir -p "${HOST_SEGMENTS_DIR}"
 
 tmp_file="$(mktemp)"

@@ -1,8 +1,8 @@
-# Scene Intelligence
+# Real Time Scene Understanding
 
 ## Overview
 
-Scene Intelligence is a real-time video monitoring application that ingests RTSP camera streams, renders low-latency browser playback over WebRTC, and runs AI-based alert detection with deep multi-frame analysis.
+Real Time Scene Understanding is a real-time video monitoring application that ingests RTSP camera streams, renders low-latency browser playback over WebRTC, and runs AI-based alert detection with deep multi-frame analysis.
 
 At runtime, each stream is managed by a PyAV worker that:
 
@@ -28,7 +28,7 @@ The application includes a FastAPI backend and a browser UI for stream control, 
 
 ### Runtime services (Docker Compose)
 
-- scene-intelligence: FastAPI app + UI.
+- real-time-scene-understanding: FastAPI app + UI.
 - mediamtx: RTSP ingest target and WebRTC/WHEP playback service.
 - coturn: TURN server used by WebRTC.
 - metrics-manager: SSE metrics endpoint for CPU, RAM, GPU, and NPU visualization.
@@ -134,7 +134,7 @@ All runtime settings are controlled by environment variables in app/backend/conf
 | DEEP_ANALYZER_MODEL | Qwen3.5-2B-int4-ov | Deep analyzer model name |
 | DEEP_ANALYZER_DEVICE | GPU | Device for deep analyzer |
 | SEAWEEDFS_ENDPOINT_URL | http://seaweedfs:8333 | S3-compatible endpoint |
-| SEAWEEDFS_BUCKET | scene-intelligence | Alert artifact bucket |
+| SEAWEEDFS_BUCKET | real-time-scene-understanding | Alert artifact bucket |
 | S3_RETENTION_DAYS | 10 | Object retention/lifecycle window |
 
 Model path note: both alert VLM and deep analyzer resolve models from the same fixed root (`/models`) via `VLM_MODELS_DIR`, with layout `<root>/<device>/<model>`.

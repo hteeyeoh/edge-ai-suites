@@ -1,7 +1,7 @@
 {
     "identities": [
         {
-            "name": "scene-intelligence",
+            "name": "real-time-scene-understanding",
             "credentials": [
                 {
                     "accessKey": "sceneadmin",

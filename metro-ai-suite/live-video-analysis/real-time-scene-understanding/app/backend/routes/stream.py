@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 def build_stream_router(registry, alert_index) -> APIRouter:
     """Builds a stream management router for the FastAPI application"""
-    router = APIRouter(tags=["Stream"])
+    router = APIRouter(prefix="/api", tags=["stream"])
 
     @router.get("/streams", summary="List all active streams")
     async def list_streams() -> dict:

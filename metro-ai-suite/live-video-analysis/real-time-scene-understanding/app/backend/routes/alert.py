@@ -10,7 +10,7 @@ from fastapi.responses import Response
 
 def build_alert_router(alert_index, get_alert_s3_client, settings) -> APIRouter:
     """Builds an alert management router for the FastAPI application"""
-    router = APIRouter(tags=["Alert"])
+    router = APIRouter(prefix="/api", tags=["alert"])
 
     @router.get("/streams/{stream_id}/alerts", summary="List alerts for a specific stream")
     async def list_alerts(
@@ -28,7 +28,7 @@ def build_alert_router(alert_index, get_alert_s3_client, settings) -> APIRouter:
                     "alert_event": r.get("alert_event", ""),
                     "trigger_caption": r.get("trigger_caption", ""),
                     "thumbnail_url": (
-                        f"/streams/{stream_id}/alerts/{r.get('frame_id', '')}/thumbnail"
+                        f"/api/streams/{stream_id}/alerts/{r.get('frame_id', '')}/thumbnail"
                         if r.get("thumbnail_object_key") else ""
                     ),
                     "uploaded_at": r.get("uploaded_at", ""),
@@ -49,7 +49,7 @@ def build_alert_router(alert_index, get_alert_s3_client, settings) -> APIRouter:
             "alert_event": record.get("alert_event", ""),
             "trigger_caption": record.get("trigger_caption", ""),
             "thumbnail_url": (
-                f"/streams/{stream_id}/alerts/{frame_id}/thumbnail"
+                f"/api/streams/{stream_id}/alerts/{frame_id}/thumbnail"
                 if record.get("thumbnail_object_key") else ""
             ),
             "description": record.get("description", ""),
@@ -57,7 +57,7 @@ def build_alert_router(alert_index, get_alert_s3_client, settings) -> APIRouter:
             "model": record.get("model", ""),
             "device": record.get("device", ""),
             "uploaded_at": record.get("uploaded_at", ""),
-            "video_url": f"/streams/{stream_id}/alerts/{frame_id}/video",
+            "video_url": f"/api/streams/{stream_id}/alerts/{frame_id}/video",
         }
 
     @router.get("/streams/{stream_id}/alerts/{frame_id}/thumbnail", summary="Get the thumbnail image of a specific alert")

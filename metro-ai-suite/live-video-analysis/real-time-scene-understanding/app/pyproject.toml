@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
-name = "scene-intelligence"
+name = "real-time-scene-understanding"
 version = "0.1.0"
-description = "Scene Intelligence — RTSP ingestion and WebRTC rendering pipeline powered by PyAV"
+description = "Real-time RTSP scene understanding with VLM alert detection and temporal deep analysis over segmented frame collections."
 requires-python = ">=3.12"
 dependencies = [
     # Web framework

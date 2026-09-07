@@ -25,13 +25,13 @@ async function parseErrorDetail(resp, fallback) {
 }
 
 export async function fetchStreams() {
-    const res = await fetch("/streams");
+    const res = await fetch("/api/streams");
     const data = await res.json();
     return Array.isArray(data.streams) ? data.streams : [];
 }
 
 export async function addStream({ streamId, url, alertEvent }) {
-    const addResp = await fetch("/streams", {
+    const addResp = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stream_id: streamId, url, alert_event: alertEvent }),
@@ -44,7 +44,7 @@ export async function addStream({ streamId, url, alertEvent }) {
 }
 
 export async function deleteStream(streamId) {
-    const resp = await fetch(`/streams/${encodeURIComponent(streamId)}`, { method: "DELETE" });
+    const resp = await fetch(`/api/streams/${encodeURIComponent(streamId)}`, { method: "DELETE" });
     if (!resp.ok && resp.status !== 404) {
         const detail = await parseErrorDetail(resp, "Failed to stop stream.");
         throw new Error(detail);
@@ -53,7 +53,7 @@ export async function deleteStream(streamId) {
 
 export async function fetchAlertPage(streamId, offset) {
     const resp = await fetch(
-        `/streams/${encodeURIComponent(streamId)}/alerts?limit=${ALERT_PAGE_SIZE}&offset=${offset}`
+        `/api/streams/${encodeURIComponent(streamId)}/alerts?limit=${ALERT_PAGE_SIZE}&offset=${offset}`
     );
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
@@ -65,7 +65,7 @@ export async function fetchAlertPage(streamId, offset) {
 }
 
 export async function fetchAlertDetail(streamId, frameId) {
-    const resp = await fetch(`/streams/${encodeURIComponent(streamId)}/alerts/${encodeURIComponent(frameId)}`);
+    const resp = await fetch(`/api/streams/${encodeURIComponent(streamId)}/alerts/${encodeURIComponent(frameId)}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
 }

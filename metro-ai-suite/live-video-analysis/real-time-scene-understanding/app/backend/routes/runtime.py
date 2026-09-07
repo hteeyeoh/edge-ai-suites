@@ -10,7 +10,7 @@ from fastapi.responses import Response
 
 def build_runtime_config_router(settings) -> APIRouter:
     """Builds a runtime config router for the FastAPI application"""
-    router = APIRouter(tags=["Runtime Config"])
+    router = APIRouter(prefix="/api", tags=["runtime config"])
 
     @router.get("/runtime-config.js", response_class=Response, summary="Runtime config for browser")
     async def runtime_config() -> Response:

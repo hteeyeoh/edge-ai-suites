@@ -192,7 +192,7 @@ class Settings:
     SEAWEEDFS_ENDPOINT_URL: str = os.getenv("SEAWEEDFS_ENDPOINT_URL", "http://seaweedfs:8333")
     SEAWEEDFS_ACCESS_KEY: str = os.getenv("SEAWEEDFS_ACCESS_KEY", "sceneadmin")
     SEAWEEDFS_SECRET_KEY: str = os.getenv("SEAWEEDFS_SECRET_KEY", "sceneadmin123")
-    SEAWEEDFS_BUCKET: str = os.getenv("SEAWEEDFS_BUCKET", "scene-intelligence")
+    SEAWEEDFS_BUCKET: str = os.getenv("SEAWEEDFS_BUCKET", "real-time-scene-understanding")
     SEAWEEDFS_USE_SSL: bool = _bool("SEAWEEDFS_USE_SSL", False)
     SEAWEEDFS_VERIFY_SSL: bool = _bool("SEAWEEDFS_VERIFY_SSL", False)
     # S3 lifecycle retention applies to SeaweedFS and AWS S3-compatible endpoints.

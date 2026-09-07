@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 def build_registry_router(frame_registry) -> APIRouter:
     """Builds a registry management router for the FastAPI application"""
-    router = APIRouter(tags=["Registry"])
+    router = APIRouter(prefix="/api", tags=["registry"])
 
     @router.get("/registry/stats", summary="Get registry statistics")
     async def registry_stats():

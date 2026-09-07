@@ -11,7 +11,7 @@ from fastapi import APIRouter
 
 def build_health_router(registry, startup_time: float) -> APIRouter:
     """Builds a health check router for the FastAPI application"""
-    router = APIRouter(tags=["Health"])
+    router = APIRouter(prefix="/api", tags=["health"])
 
     @router.get("/health", response_model=dict, summary="Health check endpoint")
     async def health() -> dict:
