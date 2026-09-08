@@ -46,7 +46,7 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from ..config import settings
+from ..config import build_deep_analyzer_prompt, settings
 from . import utils
 from .alert_index import get_alert_index
 from .object_storage import SeaweedFSStorage
@@ -334,7 +334,7 @@ class DeepAnalyzerEngine:
         """Read frames from a finalized segment and call the VLM pipeline on them."""
         frames = self._read_segment_frames(job)
         tensor = ov.Tensor(frames)
-        prompt = settings.DEEP_ANALYZER_PROMPT_TEMPLATE.format(event=job.alert_event)
+        prompt = build_deep_analyzer_prompt(job.alert_event)
 
         logger.info(
             "[%s] deep-analyzing segment=%s frame_id=%s (%d frames)",
