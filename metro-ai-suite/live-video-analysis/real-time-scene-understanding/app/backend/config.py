@@ -103,7 +103,7 @@ class Settings:
     # Alert prompt template used to construct the final VLM prompt from a
     # user-provided alert event (e.g. "fire", "accident").
     ALERT_PROMPT_TEMPLATE: str = (
-        "Task: Determine whether the event {event} is present in this image. "
+        "Task: Determine whether '{event}' is present in this image. "
         'Use only visual evidence from this single frame. '
         'If the event is clearly present, reply "Yes". Otherwise, reply "No". '
         'Output exactly one word: "Yes" or "No".'
@@ -184,7 +184,14 @@ class Settings:
 
     # Multi-frame confirmation prompt; {event} is substituted with the
     # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
-    DEEP_ANALYZER_PROMPT_TEMPLATE: str = "You are an expert video analysis assistant. Analyze the provided sequence of video frames chronologically. Summarize it concisely."
+    DEEP_ANALYZER_PROMPT_TEMPLATE: str = os.getenv(
+        "DEEP_ANALYZER_PROMPT_TEMPLATE",
+        (
+            "Analyze the provided sequence of video frames chronologically for the event '{event}'. "
+            "Use only visible evidence and consider the chronological sequence. "
+            "Describe what happened, the key evidence, and how it developed."
+        ),
+    )
 
     # ---- SeaweedFS object storage (S3-compatible) ----
     # Deep-analyzer uploads finalized segment videos and stores
@@ -214,13 +221,26 @@ settings = Settings()
 
 def build_alert_prompt(alert_event: str) -> str:
     """Build a binary-response VLM prompt from a user-provided alert event."""
+    return _build_event_prompt(settings.ALERT_PROMPT_TEMPLATE, alert_event)
+
+
+def build_deep_analyzer_prompt(alert_event: str) -> str:
+    """Build a deep-analyzer prompt from a user-provided alert event."""
+    return _build_event_prompt(settings.DEEP_ANALYZER_PROMPT_TEMPLATE, alert_event)
+
+
+def _build_event_prompt(template: str, alert_event: str) -> str:
+    """Build a prompt by substituting a normalized event into a template."""
     event_text = " ".join(str(alert_event or "").strip().split())
     if not event_text:
         raise ValueError("'alert_event' must not be empty")
     if re.search(r"[,;|/]", event_text):
         raise ValueError("Only one alert event is supported per stream")
 
-    return settings.ALERT_PROMPT_TEMPLATE.format(event=event_text)
+    try:
+        return template.format(event=event_text)
+    except KeyError as exc:
+        raise ValueError("Prompt template must include '{event}' placeholder") from exc
 
 
 def setup_logging() -> None:
