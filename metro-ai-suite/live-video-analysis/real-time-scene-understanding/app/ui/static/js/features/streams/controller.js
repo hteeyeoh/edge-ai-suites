@@ -10,12 +10,13 @@ import { addStream, deleteStream, fetchStreams } from "../../services/api.js";
 import { startWhepPlayback } from "../../services/webrtc.js";
 import {
     formatAlertEventDetails,
+    formatVlmResponseHistory,
     formatVlmMetrics,
-    isAlertDetected,
     sanitizeStreamId,
 } from "../../utils/stream.js";
 
 const POLL_INTERVAL_MS = 2000;
+const VLM_HISTORY_LIMIT = 3;
 
 export function createStreamsController(elements, { openAlertDrawer }) {
     const {
@@ -182,6 +183,19 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         vlmMetrics.className = "stream-vlm-metrics";
         vlmMetrics.textContent = "TTFT: - ms | TPOT: - ms | Throughput: - tok/s";
 
+        const vlmResponse = document.createElement("div");
+        vlmResponse.className = "stream-vlm-response";
+
+        const vlmResponseHistory = document.createElement("ol");
+        vlmResponseHistory.className = "stream-vlm-response__history";
+
+        const initialHistoryItem = document.createElement("li");
+        initialHistoryItem.className = "stream-vlm-response__item stream-vlm-response__item--placeholder";
+        initialHistoryItem.textContent = "Awaiting response...";
+        vlmResponseHistory.appendChild(initialHistoryItem);
+
+        vlmResponse.appendChild(vlmResponseHistory);
+
         frame.appendChild(video);
         frame.appendChild(overlay);
         head.appendChild(idText);
@@ -193,6 +207,7 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         card.appendChild(alertDetails);
         card.appendChild(frame);
         card.appendChild(vlmMetrics);
+        card.appendChild(vlmResponse);
         streamsGrid.appendChild(card);
 
         const player = {
@@ -205,6 +220,8 @@ export function createStreamsController(elements, { openAlertDrawer }) {
             alertBell,
             alertCountSeen: null,
             alertPulseTimeout: null,
+            vlmResponse,
+            vlmResponseHistory,
             vlmMetrics,
             stopButton,
             playback: null,
@@ -241,11 +258,40 @@ export function createStreamsController(elements, { openAlertDrawer }) {
             player.alertDetails.classList.toggle("stream-alert-details--hidden", !hasAlertEvent);
         }
 
-        const alertDetected = isAlertDetected(stream.caption);
-        player.card.classList.toggle("stream-card--alert", alertDetected);
-
         if (player.vlmMetrics) {
             player.vlmMetrics.textContent = formatVlmMetrics(stream);
+        }
+
+        if (player.vlmResponseHistory) {
+            const history = formatVlmResponseHistory(stream, VLM_HISTORY_LIMIT);
+            player.vlmResponseHistory.innerHTML = "";
+
+            if (history.length === 0) {
+                const placeholderItem = document.createElement("li");
+                placeholderItem.className = "stream-vlm-response__item stream-vlm-response__item--placeholder";
+                placeholderItem.textContent = "Awaiting response...";
+                player.vlmResponseHistory.appendChild(placeholderItem);
+            } else {
+                history.forEach((response, index) => {
+                    const item = document.createElement("li");
+                    item.className = "stream-vlm-response__item";
+                    item.classList.toggle("stream-vlm-response__item--alert", Boolean(response.alert));
+
+                    const meta = document.createElement("p");
+                    meta.className = "stream-vlm-response__meta";
+                    meta.textContent = response.timeLabel
+                        ? `${response.label} \u2022 ${response.timeLabel}`
+                        : response.label;
+
+                    const text = document.createElement("p");
+                    text.className = "stream-vlm-response__text";
+                    text.textContent = response.text;
+
+                    item.appendChild(meta);
+                    item.appendChild(text);
+                    player.vlmResponseHistory.appendChild(item);
+                });
+            }
         }
 
         if (player.alertBell) {

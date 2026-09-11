@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Unit tests for backend.services.vlm.parse_yes_no."""
+"""Unit tests for backend.services.vlm helpers."""
 
 from __future__ import annotations
 
@@ -12,23 +12,44 @@ from backend.services.vlm import parse_yes_no
 class TestParseYesNo:
     @pytest.mark.parametrize(
         "caption",
-        ["Yes", "  YES, definitely.  ", "yes-it-is", "Yes."],
+        [
+            "Yes",
+            "  YES, definitely.  ",
+            "yes-it-is",
+            "Yes.",
+            "Decision: Yes\nDescription: Person holding an item near shelf.",
+        ],
     )
     def test_recognizes_affirmative_captions(self, caption):
         assert parse_yes_no(caption) is True
 
     @pytest.mark.parametrize(
         "caption",
-        ["No", "no.", "No, nothing here.", "NO!"],
+        [
+            "No",
+            "no.",
+            "No, nothing here.",
+            "NO!",
+            "Decision: No\nDescription: Regular shopping scene with no suspicious act.",
+        ],
     )
     def test_recognizes_negative_captions(self, caption):
         assert parse_yes_no(caption) is False
 
-    @pytest.mark.parametrize("caption", ["Maybe", "Unclear", "123", "", None])
+    @pytest.mark.parametrize(
+        "caption",
+        [
+            "Maybe",
+            "Unclear",
+            "123",
+            "",
+            None,
+            "There is no direct evidence, but yes there is suspicious movement.",
+        ],
+    )
     def test_returns_none_for_ambiguous_captions(self, caption):
         assert parse_yes_no(caption) is None
 
-    def test_known_quirk_no_prefixed_words_are_treated_as_negative(self):
-        # "Not sure" normalizes to "notsure", which starts with "no" — the
-        # parser only looks at the leading prefix, not whole-word matching.
-        assert parse_yes_no("Not sure") is False
+    def test_prefers_decision_field_over_other_text(self):
+        caption = "No obvious event. Decision: Yes\nDescription: Person conceals item in bag."
+        assert parse_yes_no(caption) is True

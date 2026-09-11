@@ -17,6 +17,7 @@ matching how the models are mounted into the container.
 from __future__ import annotations
 
 import itertools
+import json
 import logging
 import os
 import queue
@@ -35,20 +36,82 @@ from . import utils
 
 logger = logging.getLogger(__name__)
 
+# JSON schema enforced on every VLM generation via StructuredOutputConfig, so the
+# model can only ever emit a valid {"decision": "Yes"|"No", "description": str}
+# object (see ALERT_PROMPT_TEMPLATE) instead of free-form text that needs parsing.
+# description's maxLength is derived from ALERT_VLM_MAX_TOKENS (see
+# _build_alert_verdict_schema), not fixed, so it never asks for more text than
+# the configured token budget can actually finish writing.
+
+# Rough English chars-per-token used to size description's maxLength; only
+# needs to be in the right ballpark since it just bounds worst-case length.
+_CHARS_PER_TOKEN = 4
+# Tokens reserved for the 'decision' field plus JSON punctuation/keys, leaving
+# the remainder of ALERT_VLM_MAX_TOKENS for the description text itself.
+_JSON_OVERHEAD_TOKENS = 20
+
+
+def _build_alert_verdict_schema(max_new_tokens: int) -> dict[str, Any]:
+    """Build ALERT_VERDICT_SCHEMA with a description cap sized to max_new_tokens.
+
+    A fixed maxLength would either be reached before max_new_tokens (wasting
+    budget) or, if max_new_tokens is lowered below what the cap needs, force
+    truncation before the JSON can close. Sizing it off the actual token
+    budget keeps the two consistent regardless of configuration.
+    """
+    available_tokens = max(max_new_tokens - _JSON_OVERHEAD_TOKENS, 5)
+    max_length = available_tokens * _CHARS_PER_TOKEN
+    return {
+        "type": "object",
+        "properties": {
+            "decision": {"type": "string", "enum": ["Yes", "No"]},
+            "description": {"type": "string", "maxLength": max_length},
+        },
+        "required": ["decision", "description"],
+        "additionalProperties": False,
+    }
+
+
+def _parse_alert_verdict(raw_text: str) -> tuple[Optional[str], Optional[str]]:
+    """Extract (decision, description) from the model's JSON output.
+
+    Parses the substring between the first '{' and last '}' (tolerates stray
+    characters GenAI occasionally emits around it, e.g. a lone "!"). Returns
+    (None, None) if that substring isn't valid JSON with both fields present
+    -- e.g. generation got cut off by max_new_tokens before the object closed
+    -- since a partial verdict isn't reliable enough to show or act on.
+    """
+    text = str(raw_text or "")
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None, None
+
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None, None
+
+    if not isinstance(data, dict):
+        return None, None
+
+    decision = data.get("decision")
+    description = data.get("description")
+    if not isinstance(decision, str) or not isinstance(description, str):
+        return None, None
+    return decision, description
+
 
 def parse_yes_no(caption: str) -> Optional[bool]:
-    """Parse a binary alert-verdict caption (see ALERT_PROMPT_TEMPLATE) into a bool.
+    """Parse the 'Decision: Yes/No' line of a formatted alert caption into a bool.
 
-    Returns None if the caption doesn't clearly start with "yes"/"no" (e.g. an
-    unexpected/free-form response), so callers can distinguish "no event" from
-    "couldn't tell".
+    Operates on the display string produced by VLMEngine._format_alert_caption
+    (not the raw model JSON). Returns None when no verdict line is present.
     """
-    normalized = re.sub(r"[^a-z0-9]", "", str(caption or "").strip().lower())
-    if normalized.startswith("yes"):
-        return True
-    if normalized.startswith("no"):
-        return False
-    return None
+    match = re.match(r"\s*decision\s*:\s*(yes|no)\b", str(caption or ""), flags=re.IGNORECASE)
+    if match is None:
+        return None
+    return match.group(1).lower() == "yes"
 
 
 class _CaptionRequest:
@@ -60,7 +123,7 @@ class _CaptionRequest:
         self.rgb_frame = rgb_frame
         self.prompt = prompt
         self.event = threading.Event()
-        self.result: Optional[tuple[str, dict[str, Optional[float]]]] = None
+        self.result: Optional[tuple[Optional[str], dict[str, Optional[float]]]] = None
         self.error: Optional[BaseException] = None
 
 
@@ -115,6 +178,14 @@ class VLMEngine:
             )
         self._gen_config = ov_genai.GenerationConfig()
         self._gen_config.max_new_tokens = settings.ALERT_VLM_MAX_TOKENS
+        if hasattr(self._gen_config, "do_sample"):
+            self._gen_config.do_sample = settings.ALERT_VLM_DO_SAMPLE
+        # Constrains generation to a schema sized off ALERT_VLM_MAX_TOKENS so the
+        # output is always valid JSON that finishes within budget, never free
+        # text that needs best-effort regex parsing.
+        self._gen_config.structured_output_config = ov_genai.StructuredOutputConfig(
+            json_schema=json.dumps(_build_alert_verdict_schema(settings.ALERT_VLM_MAX_TOKENS))
+        )
         logger.info("VLM pipeline ready")
 
     @staticmethod
@@ -124,6 +195,19 @@ class VLMEngine:
         if isinstance(texts, (list, tuple)) and texts:
             return str(texts[0]).strip()
         return str(result).strip()
+
+    @staticmethod
+    def _format_alert_caption(raw_text: str) -> Optional[str]:
+        """Render the schema-constrained JSON verdict as a 'Decision: .. / Description: ..' string.
+
+        Returns None if the output wasn't a complete, valid verdict (e.g.
+        truncated mid-description) -- callers should drop the response for
+        this cycle rather than show a partial/malformed result.
+        """
+        decision, description = _parse_alert_verdict(raw_text)
+        if decision is None or description is None:
+            return None
+        return f"Decision: {decision}\nDescription: {description}"
 
     def _dispatch_loop(self) -> None:
         """Single worker thread; the only caller of `_generate`, so no lock is needed there."""
@@ -138,8 +222,12 @@ class VLMEngine:
 
     def _generate(
         self, rgb_frame: np.ndarray, prompt_text: str
-    ) -> tuple[str, dict[str, Optional[float]]]:
-        """Call the GenAI VLM pipeline on one frame and prompt."""
+    ) -> tuple[Optional[str], dict[str, Optional[float]]]:
+        """Call the GenAI VLM pipeline on one frame and prompt.
+
+        Returns caption=None when the output wasn't a complete, valid verdict
+        (see _format_alert_caption) -- callers should drop it for this cycle.
+        """
         # GenAI expects a batched NHWC uint8 tensor.
         tensor = ov.Tensor(np.expand_dims(rgb_frame, axis=0))
         t0 = time.perf_counter()
@@ -157,7 +245,7 @@ class VLMEngine:
                 "VLM result has no usable perf_metrics; falling back to estimated metrics"
             )
 
-        caption_text = self._extract_caption_text(result)
+        caption_text = self._format_alert_caption(self._extract_caption_text(result))
         return caption_text, metrics
 
     def caption_with_metrics(
@@ -166,11 +254,12 @@ class VLMEngine:
         prompt: Optional[str] = None,
         *,
         priority: bool = False,
-    ) -> tuple[str, dict[str, Optional[float]]]:
+    ) -> tuple[Optional[str], dict[str, Optional[float]]]:
         """Queue a captioning request and block until served.
 
         `priority=True` (e.g. alert-driven streams) is served ahead of normal
-        requests; ordering within each tier is FIFO.
+        requests; ordering within each tier is FIFO. Caption is None when the
+        response was truncated/malformed (see _format_alert_caption).
         """
         prompt_text = (prompt or "").strip()
         if not prompt_text:
@@ -186,8 +275,8 @@ class VLMEngine:
         assert request.result is not None
         return request.result
 
-    def caption(self, rgb_frame: np.ndarray, prompt: Optional[str] = None) -> str:
-        """Return a caption for one RGB frame (H×W×3, uint8)."""
+    def caption(self, rgb_frame: np.ndarray, prompt: Optional[str] = None) -> Optional[str]:
+        """Return a caption for one RGB frame (H×W×3, uint8), or None if truncated/malformed."""
         caption_text, _metrics = self.caption_with_metrics(rgb_frame, prompt=prompt)
         return caption_text
 

@@ -28,6 +28,7 @@ def build_stream_router(registry, alert_index) -> APIRouter:
                     "reconnect_count": act_stream.reconnect_count,
                     "whep_path": f"/{manager.stream_id}/whep",
                     "caption": act_stream.caption,
+                    "caption_history": act_stream.caption_history,
                     "caption_ts": act_stream.caption_ts,
                     "ttft_ms": act_stream.ttft_ms,
                     "tpot_ms": act_stream.tpot_ms,

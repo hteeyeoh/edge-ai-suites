@@ -101,17 +101,25 @@ class Settings:
     ALERT_VLM_DEVICE: str = os.getenv("ALERT_VLM_DEVICE", "NPU")
 
     # Alert prompt template used to construct the final VLM prompt from a
-    # user-provided alert event (e.g. "fire", "accident").
+    # user-provided alert event (e.g. "fire", "accident"). The response shape
+    # (decision/description) is enforced via OpenVINO GenAI's structured
+    # output (see _build_alert_verdict_schema in services/vlm.py), not by this text.
+    # 'description' is spelled out separately from the Yes/No wording so the
+    # model doesn't latch onto the literal word "Yes"/"No" when describing
+    # the scene (observed failure mode: "the word 'Yes' is not present").
     ALERT_PROMPT_TEMPLATE: str = (
-        "Task: Determine whether '{event}' is present in this image. "
-        'Use only visual evidence from this single frame. '
-        'If the event is clearly present, reply "Yes". Otherwise, reply "No". '
-        'Output exactly one word: "Yes" or "No".'
+        "Task: Determine whether the event: '{event}' is visible in this image, "
+        "using only visual evidence from this image.\n"
+        "Respond with a JSON object containing:\n"
+        "- \"decision\": \"Yes\" if '{event}' is visible, otherwise \"No\".\n"
+        "- \"description\": a brief factual description of what is visible in "
+        "the image itself in one sentence, not a restatement of the decision."
     )
 
     # Seconds between inferences per stream and the token budget per caption.
     ALERT_VLM_INTERVAL: float = _float("ALERT_VLM_INTERVAL", 2.0)
     ALERT_VLM_MAX_TOKENS: int = _int("ALERT_VLM_MAX_TOKENS", 20)
+    ALERT_VLM_DO_SAMPLE: bool = _bool("ALERT_VLM_DO_SAMPLE", False)
 
     # VLM NPU-specific configuration. Only used when runnning VLM inference on NPU device.
     NPU_MAX_PROMPT_LEN = _int("NPU_MAX_PROMPT_LEN", 1024)

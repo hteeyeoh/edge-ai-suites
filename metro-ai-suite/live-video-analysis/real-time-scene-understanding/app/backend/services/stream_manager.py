@@ -31,8 +31,11 @@ import logging
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
+from dataclasses import field
 from pathlib import Path
+from typing import Any
 from typing import Optional
 
 import av
@@ -76,6 +79,7 @@ _RELAY_FALLBACK_GOP = 50  # used when the source reports no usable frame rate
 # sub-second precision — updating it 4x/s instead of once per packet removes a
 # lock acquisition from the per-packet path.
 _HEALTH_TS_INTERVAL = 0.25
+_CAPTION_HISTORY_LIMIT = 3
 
 _MAX_MUX_EINVAL = 30
 _MAX_BACKWARD_DTS = 10
@@ -130,6 +134,7 @@ class StreamHealth:
     reconnect_count: int = 0
     last_packet_ts: Optional[float] = None  # monotonic
     caption: Optional[str] = None
+    caption_history: list[dict[str, Any]] = field(default_factory=list)
     caption_ts: Optional[float] = None  # wall clock (epoch seconds)
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
@@ -178,6 +183,8 @@ class StreamManager:
         self._latest_frame = None  # np.ndarray (H×W×3, RGB) or None
         self._latest_frame_ts: float = 0.0  # monotonic; 0 = no frame yet
         self._latest_frame_id: Optional[uuid.UUID] = None  # ties back to the registered FrameRecord
+        self._caption_history: deque[dict[str, Any]] = deque(maxlen=_CAPTION_HISTORY_LIMIT)
+        self._playback_start_ts: float = 0.0
 
         # Segment writer + frame metadata registry (deep-analysis handoff).
         self.frame_registry = frame_registry
@@ -195,6 +202,8 @@ class StreamManager:
         if self._running:
             return
         self._running = True
+        self._playback_start_ts = time.monotonic()
+        self._caption_history.clear()
         self._frame_event.clear()
 
         if self.frame_registry is not None:
@@ -254,6 +263,7 @@ class StreamManager:
                 reconnect_count=self.health.reconnect_count,
                 last_packet_ts=self.health.last_packet_ts,
                 caption=self.health.caption,
+                caption_history=[dict(entry) for entry in self.health.caption_history],
                 caption_ts=self.health.caption_ts,
                 ttft_ms=self.health.ttft_ms,
                 tpot_ms=self.health.tpot_ms,
@@ -755,6 +765,14 @@ class StreamManager:
                 logger.warning("[%s] VLM inference error: %s", stream_id, exc)
                 continue
 
+            if caption is None:
+                logger.warning(
+                    "[%s] dropping truncated/malformed VLM response for frame_id=%s",
+                    stream_id,
+                    frame_id,
+                )
+                continue
+
             logger.info(
                 "[%s] VLM inference done for frame_id=%s: %s", stream_id, frame_id, caption
             )
@@ -762,11 +780,19 @@ class StreamManager:
             # Resolve everything before taking the lock so the health lock is
             # held for assignments only — API readers contend on it.
             caption_ts = time.time()
+            playback_seconds = max(0.0, frame_ts - self._playback_start_ts)
             ttft_ms = metrics.get("ttft_ms")
             tpot_ms = metrics.get("tpot_ms")
             throughput_tps = metrics.get("throughput_tps")
             with health_lock:
+                self._caption_history.appendleft(
+                    {
+                        "response": caption,
+                        "playback_seconds": playback_seconds,
+                    }
+                )
                 self.health.caption = caption
+                self.health.caption_history = list(self._caption_history)
                 self.health.caption_ts = caption_ts
                 if ttft_ms is not None:
                     self.health.ttft_ms = ttft_ms
@@ -898,4 +924,5 @@ def _calculate_scaled_dimensions(width: int, height: int) -> tuple[int, int]:
     new_width, new_height = (preset_h, preset_w) if is_portrait else (preset_w, preset_h)
     new_width = new_width if new_width % 2 == 0 else new_width - 1
     new_height = new_height if new_height % 2 == 0 else new_height - 1
+
     return new_width, new_height

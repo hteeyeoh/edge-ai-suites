@@ -45,6 +45,29 @@ class TestListStreams:
         assert streams[0]["alert_count"] == 3
         assert streams[0]["whep_path"] == "/cam-1/whep"
 
+    def test_includes_caption_history_in_payload(self):
+        registry = MagicMock()
+        manager = _fake_manager()
+        manager.get_health.return_value = StreamHealth(
+            caption="Yes",
+            caption_history=[
+                {"response": "Yes", "playback_seconds": 10.1},
+                {"response": "No", "playback_seconds": 9.1},
+                {"response": "Yes", "playback_seconds": 8.1},
+            ],
+        )
+        registry.all.return_value = [manager]
+        alert_index = MagicMock()
+        alert_index.count.return_value = 0
+
+        response = _client(registry, alert_index).get("/api/streams")
+
+        assert response.status_code == 200
+        stream = response.json()["streams"][0]
+        assert stream["caption"] == "Yes"
+        assert stream["caption_history"][0]["response"] == "Yes"
+        assert stream["caption_history"][1]["response"] == "No"
+
     def test_returns_empty_list_when_no_streams(self):
         registry = MagicMock()
         registry.all.return_value = []
