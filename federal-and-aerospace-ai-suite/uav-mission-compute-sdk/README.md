@@ -34,7 +34,7 @@ check out only this directory instead of the entire repo, use a sparse
 checkout:
 
 ```bash
-git clone --filter=blob:none --sparse https://github.com/open-edge-platform/edge-ai-suites.git
+git clone -b main --filter=blob:none --sparse https://github.com/open-edge-platform/edge-ai-suites.git
 cd edge-ai-suites
 git sparse-checkout set federal-and-aerospace-ai-suite/uav-mission-compute-sdk
 cd federal-and-aerospace-ai-suite/uav-mission-compute-sdk
@@ -85,7 +85,7 @@ flowchart LR
     MQTT[MQTT Broker<br/>:1884]
     AI[Intel Edge AI<br/>YOLOv2 GPU]
     APPS[Applications<br/>Dashboards]
-    
+
     SIM -->|MAVLink| BRIDGE
     SIM -->|gz frames| BRIDGE
     BRIDGE -->|telemetry| MQTT
@@ -94,7 +94,7 @@ flowchart LR
     AI -->|detections| MQTT
     MQTT --> APPS
     RTSP -.->|"optional<br/>viewing"| APPS
-    
+
     style SIM fill:#e1f5ff,stroke:#0277bd,stroke-width:2px
     style BRIDGE fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
     style RTSP fill:#ffe0b2,stroke:#e65100,stroke-width:3px
@@ -111,6 +111,7 @@ flowchart LR
 |---|---|---|---|
 | Simulated (default) | `make up-sim-camera` | Gazebo SITL | 3 virtual cameras (nadir, forward, rear) |
 | Real USB camera | `make up-usb-camera` | SIH (no Gazebo) | 1 USB/V4L2 device |
+| Intel RealSense | `make up-realsense-camera` | SIH (no Gazebo) | RealSense D400 series — IR + depth (beyond visual spectrum) |
 
 ---
 
@@ -122,6 +123,7 @@ make up-sim-camera         # Start sim stack (includes Grafana/InfluxDB)
 make up-sim-camera-lean    # Start sim stack without observability (~300 MB RAM saved)
 make up-usb-camera         # Start USB camera stack
 make up-usb-camera-lean    # Start USB camera stack without observability
+make up-realsense-camera   # Start Intel RealSense camera stack (IR + depth)
 make down                  # Stop all containers (core infra + apps)
 make logs                  # Tail core infra logs
 ```
@@ -137,6 +139,7 @@ infra/                       Infrastructure definitions
   bridges/companion/         MAVLink ↔ MQTT bridge (companion_bridge.py — REST API)
   bridges/camera/            Gazebo cameras → RTSP (ffmpeg H264)
   bridges/usb-camera/        USB/V4L2 device → RTSP
+  bridges/realsense-camera/  Intel RealSense camera (IR + depth) → RTSP
   mediamtx/                  RTSP server config
   mosquitto/                 MQTT broker config
   grafana/                   Dashboards provisioning (Flight Telemetry, Platform Health)
@@ -183,7 +186,7 @@ Or stop observability on an already-running stack:
 docker compose stop grafana influxdb topic-extractor metrics-manager
 ```
 
-**View live camera**: `ffplay rtsp://localhost:8554/uav-1/nadir`
+**View live camera**: `ffplay rtsp://localhost:8554/uav-1/nadir` (needs a local display). Headless alternative: `ffmpeg -rtsp_transport tcp -i rtsp://localhost:8554/uav-1/nadir -t 10 -c:v copy nadir.mkv`
 
 ## Notices and Disclaimers
 

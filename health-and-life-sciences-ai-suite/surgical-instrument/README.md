@@ -41,21 +41,37 @@ The Docker Compose stack expects an OpenVINO IR at
 demo video at `videos/polyp_test.mp4`. Two ways to get there:
 
 - **Pull a prebuilt image from the registry** — the default `make up` flow.
-  Skip the training steps below.
+  You can skip local training and export, but for `SOURCE=file` runs you still
+  need `make download-dataset` to assemble the demo video below.
 - **Build the model locally** — install host prerequisites, download the
   REAL-Colon dataset subset, train YOLO11n on the Intel iGPU, and export a
   FP16 OpenVINO IR:
 
 ```bash
-./setup.sh                      # install Docker + Intel L0 stack (Ubuntu 24.04)
+make setup-prerequisites                      # install Docker + Intel L0 stack (Ubuntu 24.04)
 make check-l0                   # verify host GPU stack
 make backend-venv               # create .venv-backend (torch+xpu, Ultralytics, OpenVINO)
-./download_realcolon_subset.sh  # 7-study REAL-Colon subset (~74 GB) from figshare 22202866
+make download-dataset  # 7-study REAL-Colon subset (~45 GB) from figshare 22202866
+make prepare-dataset MAX_POS_PER_VIDEO=800 # take maximum 800 positive frames per video
 make backend-bootstrap          # dataset -> train -> FP16 OpenVINO IR (cache-first)
+```
+
+**Generate the demo video (required).** Fresh clones do not include
+`videos/polyp_test.mp4`. Generate it from the `surgical-instrument/` workdir
+before running `make doctor` / `make up`:
+
+```bash
+.venv-backend/bin/python scripts/create_endoscopy_video.py \
+  --images-dir datasets/REAL-Colon/raw/001-001_frames \
+  --output videos/polyp_test.mp4 \
+  --seconds 60 --fps 60 --width 1920 --height 1080
+```
+
+```bash
 make doctor                     # preflight all runtime prerequisites
 ```
 
-See [Model Preparation](docs/get-started/model-preparation.md) for the full
+See [Model Preparation](docs/user-guide/get-started/model-preparation.md) for the full
 end-to-end walkthrough, dataset options, and cache-reset instructions.
 
 ## Quickstart
@@ -126,21 +142,19 @@ make up MODELS_DIR=/path/to/models VIDEOS_DIR=/path/to/videos SERIAL=<SERIAL_NUM
 
 ## Documentation
 
-- [Overview](docs/index.md)
-- [Model preparation (optional local training)](docs/get-started/model-preparation.md)
-- [Get started](docs/get-started.md)
-- [System requirements](docs/get-started/system-requirements.md)
-- [Runtime configuration](docs/runtime-configuration.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Release notes](docs/release-notes.md)
+- [Overview](docs/user-guide/index.md)
+- [Model preparation (optional local training)](docs/user-guide/get-started/model-preparation.md)
+- [Get started](docs/user-guide/get-started.md)
+- [System requirements](docs/user-guide/get-started/system-requirements.md)
+- [Runtime configuration](docs/user-guide/runtime-configuration.md)
+- [Troubleshooting](docs/user-guide/troubleshooting.md)
+- [Release notes](docs/user-guide/release-notes.md)
 
 ## Repo Layout
 
 ```text
 surgical-instrument/
 ├── Makefile
-├── setup.sh                       # host prerequisite installer (Docker + Intel L0)
-├── download_realcolon_subset.sh   # REAL-Colon 7-study subset downloader (~74 GB)
 ├── backend/                       # optional local training + OpenVINO export
 │   ├── bootstrap/                 # dataset auto-detect, train, export
 │   ├── config/model.yaml          # training + dataset config (env-var expanded)
@@ -161,6 +175,8 @@ surgical-instrument/
 │   ├── troubleshooting.md
 │   └── release-notes.md
 ├── scripts/
+│   ├── setup-prerequisites.sh        # host prerequisite installer (Docker + Intel L0)
+│   ├── download_realcolon_subset.sh  # REAL-Colon 7-study subset downloader (~74 GB)
 │   └── create_endoscopy_video.py
 └── src/
     ├── app.py

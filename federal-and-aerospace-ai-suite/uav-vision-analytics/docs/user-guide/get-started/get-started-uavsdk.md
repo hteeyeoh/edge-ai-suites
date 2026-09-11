@@ -18,6 +18,9 @@ A minimal single-container stack. Telemetry is received via MQTT from the `uav-m
 **Telemetry / pipeline lifecycle flow:**
 
 ```mermaid
+---
+config: {"theme": "dark"}
+---
 sequenceDiagram
     participant SDK as uav-mission-compute-sdk
     participant OVL as gvapython (MavlinkReceiver)
@@ -63,7 +66,7 @@ cd edge-ai-suites/federal-and-aerospace-ai-suite/uav-mission-compute-sdk
 make init                # create .env, detect GPU
 ```
 
-> Follow only **Step 0** (configure credentials) and **Step 1+2** (`make up-sim-camera`) from the [get-started guide](../../../../uav-mission-compute-sdk/docs/user-guide/get-started.md) / [SDK README](../../../../uav-mission-compute-sdk/README.md). Do **not** run `make apps` (SDK Step 3) — that starts the SDK's own AI vision-processor and dashboard, which is not needed here since `uav-vision-analytics` runs its own inference via DLSPS.
+> Follow only **Step 0** (configure credentials) and **Step 1+2** (`make up-sim-camera`) from the [get-started guide](https://github.com/open-edge-platform/edge-ai-suites/blob/main/federal-and-aerospace-ai-suite/uav-mission-compute-sdk/docs/user-guide/get-started.md) / [SDK README](https://github.com/open-edge-platform/edge-ai-suites/blob/main/federal-and-aerospace-ai-suite/uav-mission-compute-sdk/README.md). Do **not** run `make apps` (SDK Step 3) — that starts the SDK's own AI vision-processor and dashboard, which is not needed here since `uav-vision-analytics` runs its own inference via DLSPS.
 
 The SDK's `.env` defaults to `HOST_IP=127.0.0.1`, which binds MQTT, RTSP, and all other published ports to loopback only. Since `uav-vision-analytics` runs in a separate Docker container/network, it cannot reach loopback-bound ports. Set the SDK's `.env` to bind on all interfaces before starting it:
 
@@ -74,7 +77,13 @@ make up-sim-camera        # start PX4, MQTT, RTSP server
 
 ### 2. Configure environment
 
-Get into the directory:
+If Downloaded Compressed file then Get into the directory with:
+
+```bash
+cd ../uav-vision-analytics/
+```
+
+Or, If Cloned whole repo then Get into the directory with:
 
 ```bash
 cd edge-ai-suites/federal-and-aerospace-ai-suite/uav-vision-analytics
@@ -145,14 +154,7 @@ make start-rtsp DEVICE=npu     # NPU/rear only
 make start-rtsp DEVICE=all     # all three cameras simultaneously
 ```
 
-> `DEVICE=npu` requires `NPU_DEVICE` to have been detected during `make init` — falls back to GPU otherwise.
-
-**uav-mission-compute-sdk mode** — output streams (only the selected `DEVICE` is active, unless `DEVICE=all`; available after drone arms):
-```text
-rtsp://localhost:8555/nadir      (nadir camera, CPU)
-rtsp://localhost:8555/forward    (forward camera, GPU)
-rtsp://localhost:8555/rear       (rear camera, NPU)
-```
+> `DEVICE=npu` requires `NPU_DEVICE` to have been detected during `make init` — falls back to GPU otherwise. Only the selected `DEVICE` camera pipeline is active (unless `DEVICE=all`), and streams are available only after the drone arms — see [Step 7 — View the output stream](#7-view-the-output-stream) for the RTSP URLs.
 
 #### Option B — Manual REST API
 
@@ -201,20 +203,18 @@ Change following **three values** to switch between CPU / GPU / NPU:
 2. **RTSP path** in the request body (`nadir` → `forward` / `rear`)
 3. **Device** in `detection-properties` (`CPU` → `GPU` / `NPU`)
 
-Stop a pipeline:
-```bash
-curl -X DELETE http://localhost:8081/pipelines/${INSTANCE_ID}
-```
-
 ### 7. View the output stream
 
 #### View with ffplay
 
+Install ffmpeg first if not present using `sudo apt install ffmpeg`.
+
+Any of the annotated streams can be viewed with `ffplay <RTSP_PATH>`:
+
 ```bash
-# View annotated RTSP output (install ffmpeg first if not present)
-ffplay rtsp://localhost:8555/nadir               # nadir camera
-ffplay rtsp://localhost:8555/forward               # forward camera
-ffplay rtsp://localhost:8555/rear               # rearcamera
+ffplay rtsp://<HOST_IP>:8555/nadir               # nadir camera
+ffplay rtsp://<HOST_IP>:8555/forward               # forward camera
+ffplay rtsp://<HOST_IP>:8555/rear               # rearcamera
 ```
 
 #### Capture all the video streams
@@ -222,15 +222,26 @@ Record all three streams to disk with `ffmpeg`:
 
 ```bash
 ffmpeg \
-  -rtsp_transport tcp -i rtsp://localhost:8555/nadir \
-  -rtsp_transport tcp -i rtsp://localhost:8555/forward \
-  -rtsp_transport tcp -i rtsp://localhost:8555/rear \
+  -rtsp_transport tcp -i rtsp://<HOST_IP>:8555/nadir \
+  -rtsp_transport tcp -i rtsp://<HOST_IP>:8555/forward \
+  -rtsp_transport tcp -i rtsp://<HOST_IP>:8555/rear \
   -map 0:v -c:v copy nadir.mkv \
   -map 1:v -c:v copy forward.mkv \
   -map 2:v -c:v copy rear.mkv
 ```
 
-The annotated stream includes bounding boxes for detected objects (person, car, bus, truck, van, bicycle, tricycle, awning-tricycle, motor, others) and a live telemetry overlay (GPS, altitude, speed, heading).
+The annotated stream includes bounding boxes for detected objects
+(person, car, bus, truck, bicycle, and other classes)
+and a live telemetry overlay (GPS, altitude, speed, heading).
+
+> **Note — Other ways to view the stream:**
+> - Leverage versatile streaming media players such as VLC Player to seamlessly handle, manage, and playback the incoming streams with ease and efficiency.
+
+**Stop an individual pipeline** (only needed if you started one manually via Option B in [Step 6](#6-start-inference-pipelines)):
+
+```bash
+curl -X DELETE http://localhost:8081/pipelines/${INSTANCE_ID}
+```
 
 ### 8. Stop all services
 
@@ -301,7 +312,7 @@ Each output frame carries these overlaid fields in the upper-left corner:
 |---|---|
 | [index.md](../index.md) | Application overview and component block diagrams |
 | [realsense-guide.md](../how-to-guides/realsense-guide.md) | Intel RealSense camera setup and pipelines |
-| [benchmark.md](../how-to-guides/benchmark.md) | Performance benchmarking guide (`calc_stream_density.sh`) |
+| [benchmark.md](../benchmark.md) | Performance benchmarking guide |
 | [makefile.md](../how-to-guides/makefile.md) | Makefile target reference |
 | [troubleshooting.md](../how-to-guides/troubleshooting.md) | Known issues and resolutions |
 

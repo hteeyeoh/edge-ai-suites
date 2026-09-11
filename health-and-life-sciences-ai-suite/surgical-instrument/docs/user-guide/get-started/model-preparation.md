@@ -1,7 +1,7 @@
 # Model Preparation
 
-> Optional — skip this page entirely if you are pulling a prebuilt OpenVINO IR
-> from the registry. This page covers the **local training + export** flow that
+> Skip this page if you already have a compatible pre-trained model exported to OpenVINO IR.
+> This page covers the **local training + export** flow that
 > produces the model artifact under `models/yolo11n_polyp/best_openvino_model/`.
 
 The Docker Compose runtime described in [Get Started](../get-started.md) expects
@@ -18,25 +18,25 @@ run is effectively a no-op.
 
 ## 0. Install host prerequisites
 
-`setup.sh` installs everything the training venv and the Docker Compose runtime
+`make setup-prerequisites` installs everything the training venv and the Docker Compose runtime
 need: base tools, Docker Engine + Compose v2, and the Intel client GPU stack
 (Level Zero + OpenCL + iHD VA-API) from the official `intel-graphics` apt repo.
 
 ```bash
-./setup.sh          # interactive; apt may prompt for confirmation
-./setup.sh -y       # assume-yes to apt
-./setup.sh --dry-run
+make setup-prerequisites          # interactive; apt may prompt for confirmation
+make setup-prerequisites SETUP_ARGS=-y       # assume-yes to apt
+make setup-prerequisites SETUP_ARGS=--dry-run
 ```
 
 Then verify:
 
 ```bash
-make check-l0       # dpkg check for libze1, libze-intel-gpu1, intel-igc-core-2,
+make check-l0       # dpkg check for libze1, libze-intel-gpu1, libigc2,
                     # libigdgmm12, intel-opencl-icd, intel-media-va-driver-non-free
                     # and /dev/dri device node
 ```
 
-Log out and back in (or reboot) if `setup.sh` newly added your user to the
+Log out and back in (or reboot) if `make setup-prerequisites` newly added your user to the
 `render`, `video`, or `docker` groups.
 
 ---
@@ -45,26 +45,14 @@ Log out and back in (or reboot) if `setup.sh` newly added your user to the
 
 The application is validated on **REAL-Colon** (Cosmo Intelligent Medical
 Devices, figshare article `22202866`). The full corpus is 60 studies (~880 GB).
-The training subset we use is 7 studies (~74 GB).
+The training subset we use is 4 studies (~67 GB).
 
 ```bash
-./download_realcolon_subset.sh    # 7 studies, ~74 GB, to datasets/REAL-Colon/raw/
+make download-dataset    # 4 studies, ~67 GB, to datasets/REAL-Colon/raw/
+
+make prepare-dataset MAX_POS_PER_VIDEO=800 # take maximum 800 positive frames per video
+
 ```
-
-For the full corpus, use the vendor script instead:
-
-```bash
-bash datasets/REAL-Colon/helper/download_dataset.sh
-```
-
-The downloaded studies land as sibling `SSS-VVV_frames.tar.gz` +
-`SSS-VVV_annotations.tar.gz` archives (JPGs + Pascal VOC XML). You can either
-extract them yourself or let the bootstrap step do it — it auto-extracts any
-`.zip`, `.tar`, `.tar.gz`, or `.tgz` under `datasets/REAL-Colon/raw/` on first
-run.
-
-Legacy mask-based drops (e.g. CVC-ColonDB with `images/` + `masks/`) are also
-auto-detected as a fallback and converted via OpenCV connected-components.
 
 ---
 
@@ -83,7 +71,7 @@ Creates `.venv-backend/` with:
 
 The venv is host-side (not in a container) so training uses the host's Level
 Zero driver and Intel iGPU directly. Requires the L0 stack installed by
-`setup.sh` / verified by `make check-l0`.
+`make setup-prerequisites` / verified by `make check-l0`.
 
 ---
 
@@ -119,14 +107,17 @@ Or edit `backend/config/model.yaml` directly (e.g. change `train.epochs`,
 
 ---
 
-## 4. (Optional) Generate a demo video
+## 4. Generate the demo video (required)
 
-For `SOURCE=file` runs, place any endoscopic video at `videos/polyp_test.mp4`.
-A minimal generator that stitches frames from the REAL-Colon subset into a
-demo clip is provided:
+Fresh clones do not include `videos/polyp_test.mp4`. Generate it from the
+`surgical-instrument/` workdir before running `make doctor` / `make up`. The
+generator stitches frames from the REAL-Colon subset into an H.264 demo clip:
 
 ```bash
-.venv-backend/bin/python scripts/create_endoscopy_video.py
+.venv-backend/bin/python scripts/create_endoscopy_video.py \
+  --images-dir datasets/REAL-Colon/raw/001-001_frames \
+  --output videos/polyp_test.mp4 \
+  --seconds 60 --fps 60 --width 1920 --height 1080
 ```
 
 ---
