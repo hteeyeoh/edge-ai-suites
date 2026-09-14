@@ -53,7 +53,7 @@ def _get_alert_s3_client():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Real Time Scene Understanding service | port=%s", settings.PORT)
+    logger.info("Starting Real Time Scene Understanding service | port=%s", settings.DASHBOARD_PORT)
     logger.info("No startup stream auto-registration — add streams via UI or POST /api/streams")
     try:
         yield
@@ -106,6 +106,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=settings.PORT,
+        port=settings.DASHBOARD_PORT,
         log_level=settings.LOG_LEVEL.lower(),
     )

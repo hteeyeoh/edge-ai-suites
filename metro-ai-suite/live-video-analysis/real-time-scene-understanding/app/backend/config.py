@@ -62,7 +62,7 @@ def _frame_size_default(key: str, default: tuple[int, int]) -> tuple[int, int]:
 
 class Settings:
     # ---- server ----
-    PORT: int = _int("PORT", 9100)
+    DASHBOARD_PORT: int = _int("DASHBOARD_PORT", 9100)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
     # ---- stream source ----

@@ -70,8 +70,7 @@ RUN groupadd --gid 1000 appuser \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    PATH="/opt/venv/bin:$PATH" \
-    PORT=9100
+    PATH="/opt/venv/bin:$PATH"
 
 # Virtual environment with installed dependencies.
 COPY --from=builder /opt/venv /opt/venv
