@@ -2,6 +2,7 @@
 .venv/
 .coverage
 ov_models/
+.model_download_logs/
 shared/
 segments/
 *__pycache__*

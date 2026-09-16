@@ -174,6 +174,28 @@ class Settings:
     DEEP_ANALYZER_MAX_FRAMES: int = _int("DEEP_ANALYZER_MAX_FRAMES", 8)
     DEEP_ANALYZER_MAX_TOKENS: int = _int("DEEP_ANALYZER_MAX_TOKENS", 128)
 
+    # PyAV pixel format for sampled segment frames. Qwen3.5 (like every VLM
+    # preprocessor) expects RGB; feeding BGR swaps red/blue and produces
+    # confident but wrong descriptions.
+    DEEP_ANALYZER_FRAME_FORMAT: str = os.getenv("DEEP_ANALYZER_FRAME_FORMAT", "rgb24")
+
+    # ---- Deep analyzer decoding controls ----
+    # Greedy decoding by default so the same segment yields the same summary.
+    # Sampling params below only apply when DEEP_ANALYZER_DO_SAMPLE=true.
+    DEEP_ANALYZER_DO_SAMPLE: bool = _bool("DEEP_ANALYZER_DO_SAMPLE", False)
+    DEEP_ANALYZER_TEMPERATURE: float = _float("DEEP_ANALYZER_TEMPERATURE", 0.1)
+    DEEP_ANALYZER_TOP_P: float = _float("DEEP_ANALYZER_TOP_P", 0.8)
+    DEEP_ANALYZER_TOP_K: int = _int("DEEP_ANALYZER_TOP_K", 20)
+
+    # Greedy decoding loops on repeated phrases without these (see
+    # poc/ovms-deep-analyzer comparison notes).
+    DEEP_ANALYZER_REPETITION_PENALTY: float = _float("DEEP_ANALYZER_REPETITION_PENALTY", 1.3)
+    DEEP_ANALYZER_NO_REPEAT_NGRAM_SIZE: int = _int("DEEP_ANALYZER_NO_REPEAT_NGRAM_SIZE", 3)
+
+    # Allow EOS as soon as the structured response is complete.
+    DEEP_ANALYZER_MIN_TOKENS: int = _int("DEEP_ANALYZER_MIN_TOKENS", 0)
+    DEEP_ANALYZER_STRUCTURED_OUTPUT: bool = _bool("DEEP_ANALYZER_STRUCTURED_OUTPUT", True)
+
     # Deep-analyzer NPU-specific configuration. Only used when
     # DEEP_ANALYZER_DEVICE=NPU (mirrors NPU_MAX_PROMPT_LEN/NPU_MIN_RESPONSE_LEN above).
     DEEP_ANALYZER_NPU_MAX_PROMPT_LEN = _int("DEEP_ANALYZER_NPU_MAX_PROMPT_LEN", 4096)
@@ -192,13 +214,20 @@ class Settings:
 
     # Multi-frame confirmation prompt; {event} is substituted with the
     # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
-    DEEP_ANALYZER_PROMPT_TEMPLATE: str = os.getenv(
-        "DEEP_ANALYZER_PROMPT_TEMPLATE",
-        (
-            "Analyze the provided sequence of video frames chronologically for the event '{event}'. "
-            "Use only visible evidence and consider the chronological sequence. "
-            "Describe what happened, the key evidence, and how it developed."
-        ),
+    DEEP_ANALYZER_PROMPT_TEMPLATE: str = ( 
+        "Analyze the chronological video clip for the specific event '{event}'. "
+        "Write an event-focused factual summary/description using only directly visible "
+        "evidence from the frames. Describe a person, action, interaction, "
+        "identity, cause, or sequence only when it is clearly visible. Do not "
+        "infer intent, hidden actions, actions between frames, or details that "
+        "are merely plausible. Do not substitute a related or different event. "
+        "If the visible evidence does not clearly support '{event}', state that "
+        "the frames do not confirm the event and describe only the observable "
+        "scene details that explain that uncertainty. Otherwise, explain the "
+        "visible evidence that supports the event, including relevant subjects, "
+        "actions, location, and visible effects. Write for an end user; do not "
+        "mention frame numbers, timestamps, sampling, or other technical video details. "
+        "Write 4 to 6 sentences in a natural, factual style."
     )
 
     # ---- SeaweedFS object storage (S3-compatible) ----
@@ -230,11 +259,6 @@ settings = Settings()
 def build_alert_prompt(alert_event: str) -> str:
     """Build a binary-response VLM prompt from a user-provided alert event."""
     return _build_event_prompt(settings.ALERT_PROMPT_TEMPLATE, alert_event)
-
-
-def build_deep_analyzer_prompt(alert_event: str) -> str:
-    """Build a deep-analyzer prompt from a user-provided alert event."""
-    return _build_event_prompt(settings.DEEP_ANALYZER_PROMPT_TEMPLATE, alert_event)
 
 
 def _build_event_prompt(template: str, alert_event: str) -> str:

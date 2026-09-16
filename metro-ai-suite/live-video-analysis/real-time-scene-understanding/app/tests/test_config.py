@@ -13,7 +13,6 @@ from backend.config import _frame_size
 from backend.config import _frame_size_default
 from backend.config import _int
 from backend.config import build_alert_prompt
-from backend.config import build_deep_analyzer_prompt
 
 
 class TestIntFloatHelpers:
@@ -117,11 +116,9 @@ class TestPromptBuilders:
     def test_build_alert_prompt_includes_event(self):
         prompt = build_alert_prompt("fire")
         assert "fire" in prompt
-        assert prompt.strip().endswith('"Yes" or "No".')
-
-    def test_build_deep_analyzer_prompt_includes_event(self):
-        prompt = build_deep_analyzer_prompt("fire")
-        assert "fire" in prompt
+        assert "Respond with a JSON object containing:" in prompt
+        assert '"decision": "Yes" if \'fire\' is visible' in prompt
+        assert '"description"' in prompt
 
     def test_build_alert_prompt_rejects_empty_event(self):
         with pytest.raises(ValueError):

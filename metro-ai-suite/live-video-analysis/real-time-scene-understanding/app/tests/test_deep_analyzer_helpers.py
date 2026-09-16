@@ -10,11 +10,15 @@ instantiating the engine.
 
 from __future__ import annotations
 
+import queue
+import threading
+import uuid
 from collections import OrderedDict
 
 import pytest
 from backend.services import deep_analyzer as deep_analyzer_module
 from backend.services.deep_analyzer import DeepAnalyzerEngine
+from backend.services.deep_analyzer import _AnalysisJob
 from backend.services.deep_analyzer import _next_segment_path
 
 
@@ -57,3 +61,139 @@ class TestMarkBoundedCache:
             DeepAnalyzerEngine._mark(cache, f"segment-{i}")
 
         assert len(cache) == capacity
+
+
+class TestDeepAnalyzerSubmitFlow:
+    def test_submit_defers_job_until_segment_finalizes(self):
+        engine = object.__new__(DeepAnalyzerEngine)
+        engine._lock = threading.Lock()
+        engine._dedup = OrderedDict()
+        engine._finalized = OrderedDict()
+        engine._pending = {}
+        engine._active = set()
+        engine._stats = {}
+        engine._queue = queue.Queue()
+
+        segment_path = "segments/default_segment_0003.mp4"
+        engine.submit("stream-7", segment_path, "fire", uuid.uuid4())
+
+        assert segment_path in engine._pending
+        assert segment_path in engine._active
+        assert engine._queue.empty()
+        assert engine._stream_stats("stream-7")["submitted"] == 1
+        assert engine._stream_stats("stream-7")["queued"] == 1
+
+    def test_on_segment_finalized_queues_pending_job(self):
+        engine = object.__new__(DeepAnalyzerEngine)
+        engine._lock = threading.Lock()
+        engine._dedup = OrderedDict()
+        engine._finalized = OrderedDict()
+        engine._pending = {}
+        engine._active = set()
+        engine._stats = {}
+        engine._queue = queue.Queue()
+
+        segment_path = "segments/default_segment_0004.mp4"
+        job = _AnalysisJob(
+            stream_id="stream-8",
+            segment_path=segment_path,
+            alert_event="fire",
+            frame_id=uuid.uuid4(),
+        )
+        engine._pending[segment_path] = job
+        engine._finalized[segment_path] = None
+
+        engine.on_segment_finalized(segment_path)
+
+        assert segment_path not in engine._pending
+        queued_job = engine._queue.get_nowait()
+        assert queued_job.segment_path == segment_path
+        assert queued_job.stream_id == "stream-8"
+
+    def test_submit_ignores_duplicates(self):
+        engine = object.__new__(DeepAnalyzerEngine)
+        engine._lock = threading.Lock()
+        engine._dedup = OrderedDict({"segments/default_segment_0005.mp4": None})
+        engine._finalized = OrderedDict()
+        engine._pending = {}
+        engine._active = set()
+        engine._stats = {}
+        engine._queue = queue.Queue()
+
+        engine.submit("stream-9", "segments/default_segment_0005.mp4", "smoke", uuid.uuid4())
+
+        assert engine._queue.empty()
+        assert engine._pending == {}
+        assert engine._active == set()
+
+    def test_build_generation_config_uses_model_defaults(self):
+        engine = object.__new__(DeepAnalyzerEngine)
+
+        class _FakeConfig:
+            def __init__(self):
+                self.max_new_tokens = 0
+                self.min_new_tokens = 0
+                self.num_beams = 0
+                self.do_sample = False
+                self.temperature = 0.0
+                self.top_p = 0.0
+                self.top_k = 0
+                self.repetition_penalty = 0.0
+                self.no_repeat_ngram_size = 0
+                self.apply_chat_template = False
+
+        class _FakePipe:
+            def get_generation_config(self):
+                return _FakeConfig()
+
+        engine._pipe = _FakePipe()
+
+        cfg = engine._build_generation_config()
+
+        assert cfg.max_new_tokens == deep_analyzer_module.settings.DEEP_ANALYZER_MAX_TOKENS
+        assert cfg.min_new_tokens == min(
+            deep_analyzer_module.settings.DEEP_ANALYZER_MIN_TOKENS,
+            deep_analyzer_module.settings.DEEP_ANALYZER_MAX_TOKENS,
+        )
+        assert cfg.apply_chat_template is True
+
+    def test_read_segment_frames_uses_sampling_helper(self, monkeypatch):
+        engine = object.__new__(DeepAnalyzerEngine)
+
+        def fake_wait(_job):
+            return None
+
+        captured = {"called": False}
+
+        def fake_sample(path, max_frames):
+            captured["called"] = True
+            assert path == "segments/s1.mp4"
+            assert max_frames == deep_analyzer_module.settings.DEEP_ANALYZER_MAX_FRAMES
+            return __import__("numpy").array([[1, 2], [3, 4]])
+
+        monkeypatch.setattr(engine, "_wait_for_next_segment", fake_wait)
+        monkeypatch.setattr(deep_analyzer_module, "_sample_segment_frames", fake_sample)
+
+        frames = engine._read_segment_frames(_AnalysisJob(stream_id="s", segment_path="segments/s1.mp4", alert_event="fire", frame_id=uuid.uuid4()))
+
+        assert captured["called"] is True
+        assert frames.shape == (2, 2)
+
+    def test_analyze_uploads_and_logs_result(self, monkeypatch):
+        engine = object.__new__(DeepAnalyzerEngine)
+        class _FakeGenConfig:
+            structured_output_config = None
+
+        engine._gen_config = _FakeGenConfig()
+        engine._pipe = type("Pipe", (), {"generate": lambda self, *args, **kwargs: type("Result", (), {"texts": ["Visible fire in the scene"]})()})()
+        engine._object_storage = type("Storage", (), {"upload_segment_and_metadata": lambda self, **kwargs: {"stream_id": kwargs["stream_id"]}})()
+
+        monkeypatch.setattr(engine, "_read_segment_frames", lambda job: __import__("numpy").array([[[0, 0, 0]], [[1, 1, 1]]], dtype="uint8"))
+        monkeypatch.setattr(deep_analyzer_module, "get_alert_index", lambda: type("Index", (), {"add": lambda self, payload: None})())
+        monkeypatch.setattr(deep_analyzer_module.settings, "DEEP_ANALYZER_STRUCTURED_OUTPUT", True)
+        monkeypatch.setattr(deep_analyzer_module, "logger", type("Logger", (), {"info": lambda *args, **kwargs: None, "warning": lambda *args, **kwargs: None})())
+
+        job = _AnalysisJob(stream_id="stream-1", segment_path="segments/seg_0001.mp4", alert_event="fire", frame_id=uuid.uuid4())
+        engine._analyze(job)
+
+        assert True

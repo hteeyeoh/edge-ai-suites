@@ -59,18 +59,33 @@ class TestExtractPerfMetrics:
     def test_returns_none_values_when_perf_metrics_missing(self):
         result = object()  # no `perf_metrics` attribute at all
         metrics = utils._extract_perf_metrics(result)
-        assert metrics == {"ttft_ms": None, "tpot_ms": None, "throughput_tps": None}
+        assert metrics == {
+            "ttft_ms": None,
+            "tpot_ms": None,
+            "throughput_tps": None,
+            "total_tokens_generated": None,
+        }
 
     def test_extracts_mean_values_from_perf_metrics(self):
         result = _FakeResult(_FakePerfMetrics(ttft=12.5, tpot=3.25, throughput=42.0))
 
         metrics = utils._extract_perf_metrics(result)
 
-        assert metrics == {"ttft_ms": 12.5, "tpot_ms": 3.25, "throughput_tps": 42.0}
+        assert metrics == {
+            "ttft_ms": 12.5,
+            "tpot_ms": 3.25,
+            "throughput_tps": 42.0,
+            "total_tokens_generated": 10.0,
+        }
 
     def test_falls_back_to_none_when_accessors_raise(self):
         result = _FakeResult(_BrokenPerfMetrics())
 
         metrics = utils._extract_perf_metrics(result)
 
-        assert metrics == {"ttft_ms": None, "tpot_ms": None, "throughput_tps": None}
+        assert metrics == {
+            "ttft_ms": None,
+            "tpot_ms": None,
+            "throughput_tps": None,
+            "total_tokens_generated": None,
+        }

@@ -30,6 +30,7 @@ Flow, driven by :class:`backend.services.stream_manager.StreamManager`:
 from __future__ import annotations
 
 import logging
+import json
 import os
 import queue
 import re
@@ -46,7 +47,7 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from ..config import build_deep_analyzer_prompt, settings
+from ..config import settings
 from . import utils
 from .alert_index import get_alert_index
 from .object_storage import SeaweedFSStorage
@@ -92,6 +93,7 @@ def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
     project dependency — instead of introducing OpenCV.
     """
 
+    pixel_format = settings.DEEP_ANALYZER_FRAME_FORMAT
     container = av.open(segment_path)
     try:
         stream = container.streams.video[0]
@@ -104,12 +106,12 @@ def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
             idx = 0
             for frame in container.decode(stream):
                 if idx in indices:
-                    frames.append(frame.to_ndarray(format="bgr24"))
+                    frames.append(frame.to_ndarray(format=pixel_format))
                 idx += 1
         else:
             # Frame count not available from container metadata; decode fully.
             for frame in container.decode(stream):
-                frames.append(frame.to_ndarray(format="bgr24"))
+                frames.append(frame.to_ndarray(format=pixel_format))
             if len(frames) > max_frames:
                 indices = np.linspace(0, len(frames) - 1, max_frames).astype(int)
                 frames = [frames[i] for i in indices]
@@ -118,7 +120,7 @@ def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
 
     if not frames:
         raise ValueError(f"No frames could be decoded from segment: {segment_path}")
-    return np.stack(frames)
+    return np.stack(frames, axis=0)
 
 
 class DeepAnalyzerEngine:
@@ -143,6 +145,7 @@ class DeepAnalyzerEngine:
         # reclaiming a rotated-out segment so a slow/backed-up dispatch
         # thread can never have its file deleted out from under it.
         self._active: set[str] = set()
+        self._stats: dict[str, dict[str, int]] = {}
 
         self._queue: "queue.Queue[_AnalysisJob]" = queue.Queue()
         self._dispatch_thread = threading.Thread(
@@ -180,9 +183,47 @@ class DeepAnalyzerEngine:
             self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **{"CACHE_DIR": vlm_cache_dir})
         else:
             self._pipe = ov_genai.VLMPipeline(model_path, settings.DEEP_ANALYZER_DEVICE, **pipeline_config)
-        self._gen_config = ov_genai.GenerationConfig()
-        self._gen_config.max_new_tokens = settings.DEEP_ANALYZER_MAX_TOKENS
+        self._gen_config = self._build_generation_config()
         logger.info("Deep analyzer pipeline ready")
+
+    def _build_generation_config(self) -> "ov_genai.GenerationConfig":
+        """Start from the model's own generation_config.json, then override decoding.
+
+        A bare ``ov_genai.GenerationConfig()`` drops the model's eos/stop token
+        ids, which is what lets generation run past its natural stop and repeat
+        lines until the token budget is exhausted.
+        """
+        try:
+            config = self._pipe.get_generation_config()
+        except Exception:  # noqa: BLE001 - older GenAI builds don't expose it
+            logger.warning("VLMPipeline.get_generation_config() unavailable; using library defaults")
+            config = ov_genai.GenerationConfig()
+
+        config.max_new_tokens = settings.DEEP_ANALYZER_MAX_TOKENS
+        config.min_new_tokens = min(settings.DEEP_ANALYZER_MIN_TOKENS, settings.DEEP_ANALYZER_MAX_TOKENS)
+        config.num_beams = 1
+        config.do_sample = settings.DEEP_ANALYZER_DO_SAMPLE
+        if config.do_sample:
+            config.temperature = settings.DEEP_ANALYZER_TEMPERATURE
+            config.top_p = settings.DEEP_ANALYZER_TOP_P
+            config.top_k = settings.DEEP_ANALYZER_TOP_K
+        config.repetition_penalty = settings.DEEP_ANALYZER_REPETITION_PENALTY
+        if settings.DEEP_ANALYZER_NO_REPEAT_NGRAM_SIZE > 0:
+            config.no_repeat_ngram_size = settings.DEEP_ANALYZER_NO_REPEAT_NGRAM_SIZE
+        config.apply_chat_template = True
+        return config
+
+    @staticmethod
+    def _structured_output_config() -> object:
+        schema = {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+            },
+            "required": ["summary"],
+            "additionalProperties": False,
+        }
+        return ov_genai.StructuredOutputConfig(json_schema=json.dumps(schema))
 
     # ------------------------------------------------------------------ #
     # Bounded set helpers
@@ -197,6 +238,26 @@ class DeepAnalyzerEngine:
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
+
+    def _stream_stats(self, stream_id: str) -> dict[str, int]:
+        return self._stats.setdefault(
+            stream_id,
+            {
+                "submitted": 0,
+                "queued": 0,
+                "in_flight": 0,
+                "completed": 0,
+                "failed": 0,
+                "max_in_flight": 0,
+            },
+        )
+
+    def get_metrics(self, stream_id: str) -> dict[str, int]:
+        """Return a point-in-time deep-analyzer job snapshot for one stream."""
+        with self._lock:
+            stats = dict(self._stream_stats(stream_id))
+        stats["active"] = stats["queued"] + stats["in_flight"]
+        return stats
 
     def submit(
         self,
@@ -221,6 +282,9 @@ class DeepAnalyzerEngine:
                 return  # already queued/pending/done — don't waste compute
             self._mark(self._dedup, segment_path)
             self._active.add(segment_path)
+            stats = self._stream_stats(stream_id)
+            stats["submitted"] += 1
+            stats["queued"] += 1
 
             if segment_path not in self._finalized:
                 # Still being written; hold until on_segment_finalized() fires.
@@ -260,14 +324,26 @@ class DeepAnalyzerEngine:
     def _dispatch_loop(self) -> None:
         while True:
             job = self._queue.get()
+            with self._lock:
+                stats = self._stream_stats(job.stream_id)
+                stats["queued"] = max(0, stats["queued"] - 1)
+                stats["in_flight"] += 1
+                stats["max_in_flight"] = max(stats["max_in_flight"], stats["in_flight"])
             try:
                 self._analyze(job)
+                with self._lock:
+                    self._stream_stats(job.stream_id)["completed"] += 1
             except Exception:  # noqa: BLE001 - keep the dispatcher alive
+                with self._lock:
+                    self._stream_stats(job.stream_id)["failed"] += 1
                 logger.exception(
                     "[%s] deep-analysis failed for segment=%s", job.stream_id, job.segment_path
                 )
             finally:
                 with self._lock:
+                    self._stream_stats(job.stream_id)["in_flight"] = max(
+                        0, self._stream_stats(job.stream_id)["in_flight"] - 1
+                    )
                     self._active.discard(job.segment_path)
 
     def _read_segment_frames(self, job: _AnalysisJob) -> np.ndarray:
@@ -334,7 +410,9 @@ class DeepAnalyzerEngine:
         """Read frames from a finalized segment and call the VLM pipeline on them."""
         frames = self._read_segment_frames(job)
         tensor = ov.Tensor(frames)
-        prompt = build_deep_analyzer_prompt(job.alert_event)
+        prompt = settings.DEEP_ANALYZER_PROMPT_TEMPLATE.format(event=job.alert_event)
+        if settings.DEEP_ANALYZER_STRUCTURED_OUTPUT:
+            self._gen_config.structured_output_config = self._structured_output_config()
 
         logger.info(
             "[%s] deep-analyzing segment=%s frame_id=%s (%d frames)",

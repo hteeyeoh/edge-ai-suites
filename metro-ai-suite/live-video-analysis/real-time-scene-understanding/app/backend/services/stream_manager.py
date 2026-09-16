@@ -139,6 +139,7 @@ class StreamHealth:
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
     throughput_tps: Optional[float] = None
+    total_tokens_generated: Optional[float] = None
 
 
 class _SegmentCtx:
@@ -268,6 +269,7 @@ class StreamManager:
                 ttft_ms=self.health.ttft_ms,
                 tpot_ms=self.health.tpot_ms,
                 throughput_tps=self.health.throughput_tps,
+                total_tokens_generated=self.health.total_tokens_generated,
             )
 
     # ------------------------------------------------------------------ #
@@ -339,7 +341,9 @@ class StreamManager:
         )
         return output, out_stream.encode, output.mux
 
-    def _open_segment_writer(self, in_stream, width: int, height: int) -> Optional[_SegmentCtx]:
+    def _open_segment_writer(
+        self, in_stream, width: int, height: int, *, start_number: int = 0
+    ) -> Optional[_SegmentCtx]:
         """Open the segment muxer/encoder, or return ``None`` on failure.
 
         Segment writing is independent of the relay: a bad segments directory
@@ -353,7 +357,11 @@ class StreamManager:
                 self._segment_output_pattern,
                 mode="w",
                 format="stream_segment",
-                options={"segment_time": str(settings.SEGMENT_TIME_SECONDS)},
+                options={
+                    "segment_time": str(settings.SEGMENT_TIME_SECONDS),
+                    "segment_start_number": str(start_number),
+                    "reset_timestamps": "1",
+                },
             )
             out_stream = container.add_stream(
                 _ENCODER, rate=in_stream.average_rate, options=_SEGMENT_X264_OPTIONS
@@ -524,6 +532,7 @@ class StreamManager:
                 # rotation of the on-disk file closely enough for a live
                 # source, regardless of what the camera reports as PTS.
                 connect_monotonic_ts = monotonic()
+                segment_number_offset = 0
 
                 for packet in input_container.demux(in_stream):
                     if not self._running:
@@ -595,7 +604,10 @@ class StreamManager:
                         # (see comment above ``connect_monotonic_ts``); source
                         # PTS is still reported/logged but no longer trusted
                         # to decide when a segment has rolled over.
-                        segment_idx = int((monotonic() - connect_monotonic_ts) / seg_seconds)
+                        segment_idx = (
+                            int((monotonic() - connect_monotonic_ts) / seg_seconds)
+                            + segment_number_offset
+                        )
 
                         if segment_idx != last_segment_idx:
                             if last_segment_path is not None:
@@ -651,14 +663,35 @@ class StreamManager:
                             seg_mux(encode(frame))  # mux() accepts the packet list directly
                         except Exception as exc:  # noqa: BLE001 - keep relay alive
                             logger.warning(
-                                "[%s] segment encode/mux failed, disabling segment writer for "
-                                "this connection (will retry next reconnect): %s",
+                                "[%s] segment encode/mux failed, reopening segment writer "
+                                "at segment %04d: %s",
                                 stream_id,
+                                max(last_segment_idx + 1, segment_idx + 1),
                                 exc,
                             )
                             _close_quietly(segment_output)
                             segment_output = None
-                            seg = None  # remaining frames skip segment work, relay continues
+                            seg = self._open_segment_writer(
+                                in_stream,
+                                new_width,
+                                new_height,
+                                start_number=max(last_segment_idx + 1, segment_idx + 1),
+                            )
+                            if seg is None:
+                                logger.error(
+                                    "[%s] segment writer recovery failed; "
+                                    "segments disabled until reconnect",
+                                    stream_id,
+                                )
+                            else:
+                                segment_output = seg.container
+                                encode = seg.encode
+                                seg_mux = seg.mux
+                                segment_number_offset += 1
+                                last_segment_idx = segment_idx + 1
+                                last_segment_path = (
+                                    f"{pattern_head}{last_segment_idx:04d}{pattern_tail}"
+                                )
 
                     # Local files have no wall-clock pacing; play at real time.
                     # Pace against a running deadline rather than sleeping a full
@@ -784,6 +817,7 @@ class StreamManager:
             ttft_ms = metrics.get("ttft_ms")
             tpot_ms = metrics.get("tpot_ms")
             throughput_tps = metrics.get("throughput_tps")
+            total_tokens_generated = metrics.get("total_tokens_generated")
             with health_lock:
                 self._caption_history.appendleft(
                     {
@@ -800,6 +834,8 @@ class StreamManager:
                     self.health.tpot_ms = tpot_ms
                 if throughput_tps is not None:
                     self.health.throughput_tps = throughput_tps
+                if total_tokens_generated is not None:
+                    self.health.total_tokens_generated = total_tokens_generated
             logger.debug("[%s] caption: %s", stream_id, caption)
 
             if deep_enabled and frame_id is not None and parse_yes_no(caption):
@@ -924,5 +960,4 @@ def _calculate_scaled_dimensions(width: int, height: int) -> tuple[int, int]:
     new_width, new_height = (preset_h, preset_w) if is_portrait else (preset_w, preset_h)
     new_width = new_width if new_width % 2 == 0 else new_width - 1
     new_height = new_height if new_height % 2 == 0 else new_height - 1
-
     return new_width, new_height

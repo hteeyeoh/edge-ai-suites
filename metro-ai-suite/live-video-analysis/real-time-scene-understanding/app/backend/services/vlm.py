@@ -108,7 +108,7 @@ def parse_yes_no(caption: str) -> Optional[bool]:
     Operates on the display string produced by VLMEngine._format_alert_caption
     (not the raw model JSON). Returns None when no verdict line is present.
     """
-    match = re.match(r"\s*decision\s*:\s*(yes|no)\b", str(caption or ""), flags=re.IGNORECASE)
+    match = re.search(r"\bdecision\s*:\s*(yes|no)\b", str(caption or ""), flags=re.IGNORECASE)
     if match is None:
         return None
     return match.group(1).lower() == "yes"
