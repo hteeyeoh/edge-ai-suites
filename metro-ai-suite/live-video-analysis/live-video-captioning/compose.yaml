@@ -151,7 +151,7 @@ services:
       - app_network
 
   video-caption-service:
-    image: ${REGISTRY:-}video-caption-service:${TAG:-latest}
+    image: amr-fm-registry.caas.intel.com/esh-user/video-caption-service:ww38
     build:
       context: ./app
       args:

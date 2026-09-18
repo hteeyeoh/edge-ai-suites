@@ -5,7 +5,7 @@ name: ${PROJECT_NAME:-live-video-caption-rag}
 
 services:
   live-video-captioning-rag:
-    image: ${REGISTRY:-}live-video-captioning-rag:${TAG:-latest}
+    image: amr-fm-registry.caas.intel.com/esh-user/live-video-captioning-rag:ww38
     build:
       context: ./app
       args:
@@ -269,7 +269,7 @@ services:
       - rag_network
 
   video-caption-service:
-    image: ${REGISTRY:-}video-caption-service:${TAG:-latest}
+    image: amr-fm-registry.caas.intel.com/esh-user/video-caption-service:ww38
     build:
       context: ../live-video-captioning/app
       args:
