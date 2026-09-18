@@ -161,12 +161,14 @@ class StreamManager:
         stream_id: str,
         source_url: str,
         vlm_prompt: str = "",
+        deep_analyzer_prompt: str = "",
         alert_event: str = "",
         frame_registry: Optional[SegmentFrameRegistry] = None,
     ):
         self.stream_id = stream_id
         self.source_url = source_url
         self.vlm_prompt = str(vlm_prompt or "").strip()
+        self.deep_analyzer_prompt = str(deep_analyzer_prompt or "").strip()
         self.alert_event = " ".join(str(alert_event or "").strip().split())
         self.target_url = f"{settings.WEBRTC_RELAY_URL.rstrip('/')}/{stream_id}"
 
@@ -764,9 +766,10 @@ class StreamManager:
         stream_id = self.stream_id
         caption_with_metrics = engine.caption_with_metrics
         prompt = self.vlm_prompt
-        alert_event = self.alert_event
-        priority = bool(alert_event)
-        deep_enabled = settings.DEEP_ANALYZER_ENABLED and bool(alert_event)
+        deep_prompt = self.deep_analyzer_prompt
+        alert_context = self.alert_event or prompt
+        priority = bool(prompt)
+        deep_enabled = settings.DEEP_ANALYZER_ENABLED and bool(prompt)
         get_segment = self.frame_registry.get_segment if self.frame_registry else None
         frame_event = self._frame_event
         frame_lock = self._frame_lock
@@ -855,7 +858,8 @@ class StreamManager:
                         get_deep_analyzer().submit(
                             stream_id=stream_id,
                             segment_path=segment_path,
-                            alert_event=alert_event,
+                            alert_event=alert_context,
+                            deep_prompt=deep_prompt,
                             frame_id=frame_id,
                             trigger_caption=caption,
                             trigger_thumbnail_jpeg=trigger_thumbnail_jpeg,

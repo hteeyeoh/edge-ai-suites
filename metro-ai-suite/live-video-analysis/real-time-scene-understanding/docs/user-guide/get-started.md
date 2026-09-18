@@ -59,7 +59,6 @@ This scipts sets these important values:
 | `DEEP_ANALYZER_MAX_FRAMES` | `8` | Maximum number of frames for the deep analyzer to process. |
 | `DEEP_ANALYZER_MAX_TOKENS` | `128` | Maximum number of tokens for the deep analyzer. |
 | `DEEP_ANALYZER_DEDUP_CACHE_SIZE` | `500` | Size of the deduplication cache for the deep analyzer. |
-| `DEEP_ANALYZER_PROMPT_TEMPLATE` | `"Analyze the provided sequence of video frames chronologically for the detected event '{event}'. Use only visible evidence and consider the chronological sequence. Describe what happened, the key evidence, and how it developed."` | Prompt template for the deep analyzer. |
 | `FRAME_REGISTRY_MAX_RECORDS_PER_STREAM` | `500` | Maximum number of records per stream in the frame registry. |
 | `SEGMENT_MAX_ON_DISK` | `50` | Maximum number of finalized segments retained on disk per stream. |
 | `HUGGINGFACEHUB_API_TOKEN` | *(empty)* | Required for downloading gated Hugging Face models. |

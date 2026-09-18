@@ -9,7 +9,6 @@
 import { addStream, deleteStream, fetchStreams } from "../../services/api.js";
 import { startWhepPlayback } from "../../services/webrtc.js";
 import {
-    formatAlertEventDetails,
     formatVlmResponseHistory,
     formatVlmMetrics,
     sanitizeStreamId,
@@ -18,13 +17,17 @@ import {
 const POLL_INTERVAL_MS = 2000;
 const VLM_HISTORY_LIMIT = 3;
 
+const PROMPT_TYPE_ALERT = "alert";
+const PROMPT_TYPE_DEEP_ANALYZER = "deep-analyzer";
+
 export function createStreamsController(elements, { openAlertDrawer }) {
     const {
         statusPill,
         rtspForm,
         rtspInput,
         streamIdInput,
-        alertEventInput,
+        alertPromptInput,
+        deepAnalyzerPromptInput,
         rtspSubmit,
         rtspMessage,
         streamsGrid,
@@ -138,6 +141,105 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         }
     }
 
+    function getPromptText(stream, promptType) {
+        if (promptType === PROMPT_TYPE_ALERT) {
+            return String(stream.alert_prompt || "").trim();
+        }
+        if (promptType === PROMPT_TYPE_DEEP_ANALYZER) {
+            return String(stream.deep_analyzer_prompt || "").trim();
+        }
+        return "";
+    }
+
+    function getPromptLabel(promptType) {
+        if (promptType === PROMPT_TYPE_ALERT) {
+            return "Alert Prompt";
+        }
+        if (promptType === PROMPT_TYPE_DEEP_ANALYZER) {
+            return "Deep Analyzer Prompt";
+        }
+        return "Prompt";
+    }
+
+    function setPromptView(player, promptType = null) {
+        if (!player.promptView) return;
+
+        if (!promptType) {
+            player.activePromptType = null;
+            player.promptView.textContent = "";
+            player.promptView.classList.add("stream-prompt-view--hidden");
+            if (player.alertPromptTag) {
+                player.alertPromptTag.classList.remove("stream-prompt-tag--active");
+                player.alertPromptTag.setAttribute("aria-expanded", "false");
+            }
+            if (player.deepAnalyzerPromptTag) {
+                player.deepAnalyzerPromptTag.classList.remove("stream-prompt-tag--active");
+                player.deepAnalyzerPromptTag.setAttribute("aria-expanded", "false");
+            }
+            return;
+        }
+
+        const promptText = getPromptText(player.stream, promptType);
+        if (!promptText) {
+            setPromptView(player, null);
+            return;
+        }
+
+        player.activePromptType = promptType;
+        player.promptView.textContent = `${getPromptLabel(promptType)}: ${promptText}`;
+        player.promptView.classList.remove("stream-prompt-view--hidden");
+
+        const isAlert = promptType === PROMPT_TYPE_ALERT;
+        if (player.alertPromptTag) {
+            player.alertPromptTag.classList.toggle("stream-prompt-tag--active", isAlert);
+            player.alertPromptTag.setAttribute("aria-expanded", isAlert ? "true" : "false");
+        }
+        if (player.deepAnalyzerPromptTag) {
+            player.deepAnalyzerPromptTag.classList.toggle("stream-prompt-tag--active", !isAlert);
+            player.deepAnalyzerPromptTag.setAttribute("aria-expanded", !isAlert ? "true" : "false");
+        }
+    }
+
+    function handlePromptTagClick(player, promptType) {
+        const isSamePrompt = player.activePromptType === promptType;
+        if (isSamePrompt) {
+            setPromptView(player, null);
+            return;
+        }
+        setPromptView(player, promptType);
+    }
+
+    function syncPromptTags(player, stream) {
+        if (!player.promptTags) return;
+
+        const hasAlertPrompt = Boolean(getPromptText(stream, PROMPT_TYPE_ALERT));
+        const hasDeepPrompt = Boolean(getPromptText(stream, PROMPT_TYPE_DEEP_ANALYZER));
+        const hasAnyPrompt = hasAlertPrompt || hasDeepPrompt;
+
+        if (player.alertPromptTag) {
+            player.alertPromptTag.hidden = !hasAlertPrompt;
+        }
+        if (player.deepAnalyzerPromptTag) {
+            player.deepAnalyzerPromptTag.hidden = !hasDeepPrompt;
+        }
+
+        player.promptTags.classList.toggle("stream-prompt-tags--hidden", !hasAnyPrompt);
+
+        if (!hasAnyPrompt) {
+            setPromptView(player, null);
+            return;
+        }
+
+        if (player.activePromptType && !getPromptText(stream, player.activePromptType)) {
+            setPromptView(player, null);
+            return;
+        }
+
+        if (player.activePromptType) {
+            setPromptView(player, player.activePromptType);
+        }
+    }
+
     function createCard(stream) {
         const card = document.createElement("article");
         card.className = "stream-card";
@@ -163,8 +265,26 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         alertBell.innerHTML = '\uD83D\uDD14<span class="stream-alert-bell__badge" hidden>0</span>';
         alertBell.setAttribute("aria-label", "View alert history");
 
-        const alertDetails = document.createElement("p");
-        alertDetails.className = "stream-alert-details stream-alert-details--hidden";
+        const promptTags = document.createElement("div");
+        promptTags.className = "stream-prompt-tags stream-prompt-tags--hidden";
+
+        const alertPromptTag = document.createElement("button");
+        alertPromptTag.type = "button";
+        alertPromptTag.className = "stream-prompt-tag";
+        alertPromptTag.textContent = "Alert Prompt";
+        alertPromptTag.setAttribute("aria-expanded", "false");
+
+        const deepAnalyzerPromptTag = document.createElement("button");
+        deepAnalyzerPromptTag.type = "button";
+        deepAnalyzerPromptTag.className = "stream-prompt-tag";
+        deepAnalyzerPromptTag.textContent = "Deep Analyzer Prompt";
+        deepAnalyzerPromptTag.setAttribute("aria-expanded", "false");
+
+        promptTags.appendChild(alertPromptTag);
+        promptTags.appendChild(deepAnalyzerPromptTag);
+
+        const promptView = document.createElement("p");
+        promptView.className = "stream-prompt-view stream-prompt-view--hidden";
 
         const meta = document.createElement("p");
         meta.className = "stream-meta";
@@ -204,7 +324,8 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         head.appendChild(actions);
         card.appendChild(head);
         card.appendChild(meta);
-        card.appendChild(alertDetails);
+        card.appendChild(promptTags);
+        card.appendChild(promptView);
         card.appendChild(frame);
         card.appendChild(vlmMetrics);
         card.appendChild(vlmResponse);
@@ -216,7 +337,11 @@ export function createStreamsController(elements, { openAlertDrawer }) {
             video,
             overlay,
             meta,
-            alertDetails,
+            promptTags,
+            alertPromptTag,
+            deepAnalyzerPromptTag,
+            promptView,
+            activePromptType: null,
             alertBell,
             alertCountSeen: null,
             alertPulseTimeout: null,
@@ -244,6 +369,12 @@ export function createStreamsController(elements, { openAlertDrawer }) {
             }
             openAlertDrawer(stream.stream_id);
         });
+        alertPromptTag.addEventListener("click", () => {
+            handlePromptTagClick(player, PROMPT_TYPE_ALERT);
+        });
+        deepAnalyzerPromptTag.addEventListener("click", () => {
+            handlePromptTagClick(player, PROMPT_TYPE_DEEP_ANALYZER);
+        });
 
         return player;
     }
@@ -252,11 +383,7 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         player.stream = stream;
         player.meta.textContent = stream.url || "";
 
-        if (player.alertDetails) {
-            const hasAlertEvent = Boolean((stream.alert_event || "").trim());
-            player.alertDetails.textContent = formatAlertEventDetails(stream);
-            player.alertDetails.classList.toggle("stream-alert-details--hidden", !hasAlertEvent);
-        }
+        syncPromptTags(player, stream);
 
         if (player.vlmMetrics) {
             player.vlmMetrics.textContent = formatVlmMetrics(stream);
@@ -264,6 +391,8 @@ export function createStreamsController(elements, { openAlertDrawer }) {
 
         if (player.vlmResponseHistory) {
             const history = formatVlmResponseHistory(stream, VLM_HISTORY_LIMIT);
+            const hasAlertInHistory = history.some((response) => Boolean(response.alert));
+            player.card.classList.toggle("stream-card--alert", hasAlertInHistory);
             player.vlmResponseHistory.innerHTML = "";
 
             if (history.length === 0) {
@@ -365,14 +494,15 @@ export function createStreamsController(elements, { openAlertDrawer }) {
             return;
         }
 
-        const alertEvent = (alertEventInput?.value || "").trim();
-        if (!alertEvent) {
-            setRtspMessage("Please enter an alert event.", true);
+        const alertPrompt = (alertPromptInput?.value || "").trim();
+        if (!alertPrompt) {
+            setRtspMessage("Please enter an alert prompt.", true);
             return;
         }
 
-        if (/[,;|/]/.test(alertEvent)) {
-            setRtspMessage("Only one alert event is supported per stream.", true);
+        const deepAnalyzerPrompt = (deepAnalyzerPromptInput?.value || "").trim();
+        if (!deepAnalyzerPrompt) {
+            setRtspMessage("Please enter a deep analyzer prompt.", true);
             return;
         }
 
@@ -383,13 +513,16 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         setRtspMessage(`Adding stream '${streamId}'...`);
 
         try {
-            await addStream({ streamId, url, alertEvent });
+            await addStream({ streamId, url, alertPrompt, deepAnalyzerPrompt });
 
             setRtspMessage(`Stream '${streamId}' added.`);
             rtspInput.value = "";
             streamIdInput.value = "";
-            if (alertEventInput) {
-                alertEventInput.value = "";
+            if (alertPromptInput) {
+                alertPromptInput.value = "";
+            }
+            if (deepAnalyzerPromptInput) {
+                deepAnalyzerPromptInput.value = "";
             }
             await pollHealth();
         } catch (err) {
@@ -400,8 +533,28 @@ export function createStreamsController(elements, { openAlertDrawer }) {
         }
     }
 
+    function bindPromptTemplateShortcut(input) {
+        if (!input) return;
+
+        input.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" && event.key !== "Tab") return;
+            if ((input.value || "").trim()) return;
+
+            const template = (input.getAttribute("placeholder") || "").trim();
+            if (!template) return;
+
+            event.preventDefault();
+            input.value = template;
+            input.selectionStart = input.value.length;
+            input.selectionEnd = input.value.length;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+    }
+
     function init() {
         rtspForm.addEventListener("submit", onSubmitRtsp);
+        bindPromptTemplateShortcut(alertPromptInput);
+        bindPromptTemplateShortcut(deepAnalyzerPromptInput);
         pollHealth();
         setInterval(pollHealth, POLL_INTERVAL_MS);
     }

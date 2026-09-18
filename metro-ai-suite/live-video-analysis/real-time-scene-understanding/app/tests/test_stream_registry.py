@@ -5,7 +5,7 @@
 
 StreamManager itself owns real PyAV threads/sockets, so it's replaced here
 with a lightweight fake that mirrors just the interface StreamRegistry
-depends on (start/stop/stream_id/source_url/alert_event).
+depends on (start/stop/stream_id/source_url/vlm_prompt/deep_analyzer_prompt/alert_event).
 """
 
 from __future__ import annotations
@@ -19,10 +19,19 @@ from backend.services.stream_registry import StreamRegistry
 class FakeStreamManager:
     instances: list["FakeStreamManager"] = []
 
-    def __init__(self, stream_id, source_url, vlm_prompt="", alert_event="", frame_registry=None):
+    def __init__(
+        self,
+        stream_id,
+        source_url,
+        vlm_prompt="",
+        deep_analyzer_prompt="",
+        alert_event="",
+        frame_registry=None,
+    ):
         self.stream_id = stream_id
         self.source_url = source_url
         self.vlm_prompt = vlm_prompt
+        self.deep_analyzer_prompt = deep_analyzer_prompt
         self.alert_event = alert_event
         self.frame_registry = frame_registry
         self.started = False

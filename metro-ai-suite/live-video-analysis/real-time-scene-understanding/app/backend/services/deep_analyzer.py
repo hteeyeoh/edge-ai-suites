@@ -55,6 +55,7 @@ from .object_storage import SeaweedFSStorage
 logger = logging.getLogger(__name__)
 
 _SEGMENT_INDEX_RE = re.compile(r"(\d+)(?=\.[^.]+$)")
+_DESCRIPTION_LINE_RE = re.compile(r"\bdescription\s*:\s*(.+)$", flags=re.IGNORECASE | re.DOTALL)
 
 
 def _next_segment_path(segment_path: str) -> Optional[str]:
@@ -81,8 +82,31 @@ class _AnalysisJob:
     segment_path: str
     alert_event: str
     frame_id: uuid.UUID
+    deep_prompt: str = ""
     trigger_caption: str = ""
     trigger_thumbnail_jpeg: bytes = b""
+
+
+def _extract_trigger_description(trigger_caption: str) -> str:
+    """Extract the description field from the single-frame alert caption text."""
+    text = str(trigger_caption or "").strip()
+    if not text:
+        return ""
+
+    description_match = _DESCRIPTION_LINE_RE.search(text)
+    description = description_match.group(1).strip() if description_match else text
+    return description
+
+
+def _build_deep_prompt(job: _AnalysisJob) -> str:
+    """Render a per-job deep prompt and prepend trigger description context."""
+    template = str(job.deep_prompt or "").strip()
+    base_prompt = template
+
+    description = _extract_trigger_description(job.trigger_caption)
+    if not description:
+        return base_prompt
+    return f"Threat Context: {description}\n\n{base_prompt.lstrip()}"
 
 
 def _sample_segment_frames(segment_path: str, max_frames: int) -> "np.ndarray":
@@ -265,6 +289,7 @@ class DeepAnalyzerEngine:
         segment_path: str,
         alert_event: str,
         frame_id: uuid.UUID,
+        deep_prompt: str = "",
         trigger_caption: str = "",
         trigger_thumbnail_jpeg: bytes = b"",
     ) -> None:
@@ -273,6 +298,7 @@ class DeepAnalyzerEngine:
             stream_id=stream_id,
             segment_path=segment_path,
             alert_event=alert_event,
+            deep_prompt=deep_prompt,
             frame_id=frame_id,
             trigger_caption=trigger_caption,
             trigger_thumbnail_jpeg=trigger_thumbnail_jpeg,
@@ -410,7 +436,7 @@ class DeepAnalyzerEngine:
         """Read frames from a finalized segment and call the VLM pipeline on them."""
         frames = self._read_segment_frames(job)
         tensor = ov.Tensor(frames)
-        prompt = settings.DEEP_ANALYZER_PROMPT_TEMPLATE.format(event=job.alert_event)
+        prompt = _build_deep_prompt(job)
         if settings.DEEP_ANALYZER_STRUCTURED_OUTPUT:
             self._gen_config.structured_output_config = self._structured_output_config()
 
@@ -454,7 +480,6 @@ class DeepAnalyzerEngine:
             payload = self._object_storage.upload_segment_and_metadata(
                 stream_id=job.stream_id,
                 segment_path=job.segment_path,
-                alert_event=job.alert_event,
                 frame_id=job.frame_id,
                 trigger_caption=job.trigger_caption,
                 trigger_thumbnail_jpeg=job.trigger_thumbnail_jpeg,

@@ -199,7 +199,6 @@ class SeaweedFSStorage:
         *,
         stream_id: str,
         segment_path: str,
-        alert_event: str,
         frame_id: uuid.UUID,
         description: str,
         metrics: dict[str, Any],
@@ -217,7 +216,6 @@ class SeaweedFSStorage:
         metadata = {
             "stream_id": self._to_s3_metadata_value(stream_id),
             "frame_id": self._to_s3_metadata_value(frame_id),
-            "alert_event": self._to_s3_metadata_value(alert_event),
             "deep_model": self._to_s3_metadata_value(deep_model),
             "deep_device": self._to_s3_metadata_value(deep_device),
             "analyzed_at": self._to_s3_metadata_value(datetime.now(timezone.utc).isoformat()),
@@ -241,7 +239,6 @@ class SeaweedFSStorage:
             "stream_id": stream_id,
             "frame_id": str(frame_id),
             "segment_path": segment_path,
-            "alert_event": alert_event,
             "trigger_caption": trigger_caption,
             "description": description,
             "metrics": metrics,

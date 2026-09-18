@@ -100,22 +100,6 @@ class Settings:
     # Inference device: CPU, GPU or NPU (selects the matching model subfolder).
     ALERT_VLM_DEVICE: str = os.getenv("ALERT_VLM_DEVICE", "NPU")
 
-    # Alert prompt template used to construct the final VLM prompt from a
-    # user-provided alert event (e.g. "fire", "accident"). The response shape
-    # (decision/description) is enforced via OpenVINO GenAI's structured
-    # output (see _build_alert_verdict_schema in services/vlm.py), not by this text.
-    # 'description' is spelled out separately from the Yes/No wording so the
-    # model doesn't latch onto the literal word "Yes"/"No" when describing
-    # the scene (observed failure mode: "the word 'Yes' is not present").
-    ALERT_PROMPT_TEMPLATE: str = (
-        "Task: Determine whether the event: '{event}' is visible in this image, "
-        "using only visual evidence from this image.\n"
-        "Respond with a JSON object containing:\n"
-        "- \"decision\": \"Yes\" if '{event}' is visible, otherwise \"No\".\n"
-        "- \"description\": a brief factual description of what is visible in "
-        "the image itself in one sentence, not a restatement of the decision."
-    )
-
     # Seconds between inferences per stream and the token budget per caption.
     ALERT_VLM_INTERVAL: float = _float("ALERT_VLM_INTERVAL", 2.0)
     ALERT_VLM_MAX_TOKENS: int = _int("ALERT_VLM_MAX_TOKENS", 20)
@@ -212,24 +196,6 @@ class Settings:
     DEEP_ANALYZER_SEGMENT_READ_MAX_RETRIES: int = _int("DEEP_ANALYZER_SEGMENT_READ_MAX_RETRIES", 5)
     DEEP_ANALYZER_SEGMENT_READ_RETRY_DELAY: float = _float("DEEP_ANALYZER_SEGMENT_READ_RETRY_DELAY", 1.0)
 
-    # Multi-frame confirmation prompt; {event} is substituted with the
-    # stream's alert_event, same convention as ALERT_PROMPT_TEMPLATE.
-    DEEP_ANALYZER_PROMPT_TEMPLATE: str = ( 
-        "Analyze the chronological video clip for the specific event '{event}'. "
-        "Write an event-focused factual summary/description using only directly visible "
-        "evidence from the frames. Describe a person, action, interaction, "
-        "identity, cause, or sequence only when it is clearly visible. Do not "
-        "infer intent, hidden actions, actions between frames, or details that "
-        "are merely plausible. Do not substitute a related or different event. "
-        "If the visible evidence does not clearly support '{event}', state that "
-        "the frames do not confirm the event and describe only the observable "
-        "scene details that explain that uncertainty. Otherwise, explain the "
-        "visible evidence that supports the event, including relevant subjects, "
-        "actions, location, and visible effects. Write for an end user; do not "
-        "mention frame numbers, timestamps, sampling, or other technical video details. "
-        "Write 4 to 6 sentences in a natural, factual style."
-    )
-
     # ---- SeaweedFS object storage (S3-compatible) ----
     # Deep-analyzer uploads finalized segment videos and stores
     # deep-analysis metadata on the uploaded object.
@@ -254,25 +220,6 @@ class Settings:
 
 
 settings = Settings()
-
-
-def build_alert_prompt(alert_event: str) -> str:
-    """Build a binary-response VLM prompt from a user-provided alert event."""
-    return _build_event_prompt(settings.ALERT_PROMPT_TEMPLATE, alert_event)
-
-
-def _build_event_prompt(template: str, alert_event: str) -> str:
-    """Build a prompt by substituting a normalized event into a template."""
-    event_text = " ".join(str(alert_event or "").strip().split())
-    if not event_text:
-        raise ValueError("'alert_event' must not be empty")
-    if re.search(r"[,;|/]", event_text):
-        raise ValueError("Only one alert event is supported per stream")
-
-    try:
-        return template.format(event=event_text)
-    except KeyError as exc:
-        raise ValueError("Prompt template must include '{event}' placeholder") from exc
 
 
 def setup_logging() -> None:

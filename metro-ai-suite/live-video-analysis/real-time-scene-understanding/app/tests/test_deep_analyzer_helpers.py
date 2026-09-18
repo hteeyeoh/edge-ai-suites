@@ -197,3 +197,47 @@ class TestDeepAnalyzerSubmitFlow:
         engine._analyze(job)
 
         assert True
+
+    def test_analyze_appends_description_to_deep_prompt(self, monkeypatch):
+        engine = object.__new__(DeepAnalyzerEngine)
+
+        class _FakeGenConfig:
+            structured_output_config = None
+
+        captured = {}
+
+        class _FakePipe:
+            def generate(self, prompt, *args, **kwargs):
+                captured["prompt"] = prompt
+                return type("Result", (), {"texts": ["ok"]})()
+
+        engine._gen_config = _FakeGenConfig()
+        engine._pipe = _FakePipe()
+        engine._object_storage = None
+
+        monkeypatch.setattr(
+            engine,
+            "_read_segment_frames",
+            lambda job: __import__("numpy").array([[[0, 0, 0]]], dtype="uint8"),
+        )
+        monkeypatch.setattr(deep_analyzer_module.settings, "DEEP_ANALYZER_STRUCTURED_OUTPUT", False)
+        monkeypatch.setattr(
+            deep_analyzer_module,
+            "logger",
+            type("Logger", (), {"info": lambda *args, **kwargs: None, "warning": lambda *args, **kwargs: None})(),
+        )
+
+        job = _AnalysisJob(
+            stream_id="stream-1",
+            segment_path="segments/seg_0002.mp4",
+            alert_event="fire",
+            frame_id=uuid.uuid4(),
+            deep_prompt=(
+                "Analyze the provided sequence of video frames chronologically for the threat."
+            ),
+            trigger_caption="Threat: Yes\nDescription: Visible smoke near the ATM.",
+        )
+        engine._analyze(job)
+
+        assert captured["prompt"].startswith("Threat: Visible smoke near the ATM.")
+        assert "Analyze the provided sequence of video frames chronologically for the threat." in captured["prompt"]

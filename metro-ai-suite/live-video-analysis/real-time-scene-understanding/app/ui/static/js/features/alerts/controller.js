@@ -56,7 +56,6 @@ export function createAlertsController(elements) {
 
             const entries = [
                 ["Stream", data.stream_id || streamId],
-                ["Alert", data.alert_event || "-"],
                 ["Uploaded", data.uploaded_at ? new Date(data.uploaded_at).toLocaleString() : "-"],
                 ["Frame", data.frame_id || "-"],
             ];
@@ -98,33 +97,20 @@ export function createAlertsController(elements) {
             timeText.className = "alert-drawer__row-time";
             timeText.textContent = time;
 
-            const eventText = document.createElement("span");
-            eventText.className = "alert-drawer__row-event";
-            eventText.textContent = alert.alert_event || "Alert";
-
             const thumbnailUrl = String(alert.thumbnail_url || "").trim();
-            const captionText = document.createElement("span");
-            captionText.className = "alert-drawer__row-caption";
-            captionText.textContent = alert.trigger_caption || "Preview unavailable";
 
             button.appendChild(timeText);
-            button.appendChild(eventText);
 
             if (thumbnailUrl) {
                 const thumb = document.createElement("img");
                 thumb.className = "alert-drawer__row-thumb";
-                thumb.alt = `Trigger frame for ${alert.alert_event || "alert"}`;
+                thumb.alt = "Trigger frame";
                 thumb.loading = "lazy";
                 thumb.src = thumbnailUrl;
                 thumb.addEventListener("error", () => {
                     thumb.remove();
-                    if (!button.contains(captionText)) {
-                        button.appendChild(captionText);
-                    }
                 });
                 button.appendChild(thumb);
-            } else {
-                button.appendChild(captionText);
             }
 
             button.addEventListener("click", () => openAlertDetail(streamId, alert.frame_id));

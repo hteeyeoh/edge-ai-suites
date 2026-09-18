@@ -7,12 +7,10 @@ from __future__ import annotations
 
 import pytest
 from backend.config import _bool
-from backend.config import _build_event_prompt
 from backend.config import _float
 from backend.config import _frame_size
 from backend.config import _frame_size_default
 from backend.config import _int
-from backend.config import build_alert_prompt
 
 
 class TestIntFloatHelpers:
@@ -89,37 +87,3 @@ class TestFrameSizeHelper:
         monkeypatch.setenv("MY_SIZE", "300x400")
         assert _frame_size_default("MY_SIZE", (100, 200)) == (300, 400)
 
-
-class TestBuildEventPrompt:
-    def test_substitutes_event_into_template(self):
-        assert _build_event_prompt("Look for {event}.", "fire") == "Look for fire."
-
-    def test_normalizes_internal_whitespace(self):
-        assert _build_event_prompt("{event}", "  a   fire   truck  ") == "a fire truck"
-
-    @pytest.mark.parametrize("empty_event", ["", "   ", None])
-    def test_raises_on_empty_event(self, empty_event):
-        with pytest.raises(ValueError, match="must not be empty"):
-            _build_event_prompt("{event}", empty_event)
-
-    @pytest.mark.parametrize("multi_event", ["fire, smoke", "fire;smoke", "fire|smoke", "fire/smoke"])
-    def test_raises_when_multiple_events_supplied(self, multi_event):
-        with pytest.raises(ValueError, match="Only one alert event"):
-            _build_event_prompt("{event}", multi_event)
-
-    def test_raises_when_template_missing_placeholder(self):
-        with pytest.raises(ValueError, match="must include '{event}'"):
-            _build_event_prompt("references {other} not the expected key", "fire")
-
-
-class TestPromptBuilders:
-    def test_build_alert_prompt_includes_event(self):
-        prompt = build_alert_prompt("fire")
-        assert "fire" in prompt
-        assert "Respond with a JSON object containing:" in prompt
-        assert '"decision": "Yes" if \'fire\' is visible' in prompt
-        assert '"description"' in prompt
-
-    def test_build_alert_prompt_rejects_empty_event(self):
-        with pytest.raises(ValueError):
-            build_alert_prompt("")

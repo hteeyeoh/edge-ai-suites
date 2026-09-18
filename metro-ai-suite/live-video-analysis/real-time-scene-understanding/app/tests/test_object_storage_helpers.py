@@ -162,7 +162,6 @@ class TestStorageRetryAndBucketSetup:
         payload = storage.upload_segment_and_metadata(
             stream_id="stream-1",
             segment_path=str(segment_path),
-            alert_event="fire",
             frame_id=frame_id,
             description="Visible fire.",
             metrics={"frames_sampled": 5.0},

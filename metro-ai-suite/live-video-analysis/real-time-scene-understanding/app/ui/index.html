@@ -80,15 +80,25 @@
             </section>
 
             <section class="control-panel">
-                <h2>Alert Configuration</h2>
+                <h2>Prompt Configuration</h2>
                 <div class="rtsp-form">
-                    <label for="alert-event">Alert Event</label>
-                    <input id="alert-event" name="alert_event" type="text" inputmode="text" maxlength="120"
-                        placeholder="Object-type only (e.g., fire, smoke, person)" required />
-                    <p class="form-message">Use one object-type alert only (for example: fire, smoke, person).
-                        Action-type alerts (for example: robbing, carjacking) are not guaranteed to be accurate with
-                        single-frame
-                        inference.</p>
+                    <div class="field-label-row">
+                        <label for="alert-prompt">Alert Prompt</label>
+                        <button type="button" class="field-help" aria-label="Alert Prompt help"
+                            data-tooltip="Enter a prompt for single-frame VLM inference from input stream. Alert will be raised when the conditions in the prompt are met, and the description will be used for context in Deep Analyzer.">?</button>
+                    </div>
+                    <textarea id="alert-prompt" name="alert_prompt" rows="4" maxlength="1200"
+                        placeholder="Describe this frame in 1 short sentence using only visible facts. Determine whether '{event}' is visible in this image, using only visual evidence from this image."
+                        required></textarea>
+
+                    <div class="field-label-row">
+                        <label for="deep-analyzer-prompt">Deep Analyzer Prompt</label>
+                        <button type="button" class="field-help" aria-label="Deep Analyzer Prompt help"
+                            data-tooltip="Enter a prompt for video-segment-level deep analyzer follow-up. VLM will use this to analyze and summarize detected threats from the alert.">?</button>
+                    </div>
+                    <textarea id="deep-analyzer-prompt" name="deep_analyzer_prompt" rows="4" maxlength="1600"
+                        placeholder="Analyze the frame sequence chronologically and determine whether the visible evidence supports the threat context. Summarize with event summary and key evidence. Use only visible evidence. Do not guess intent, identity, or anything outside the frames."
+                        required></textarea>
                 </div>
             </section>
 

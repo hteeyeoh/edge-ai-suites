@@ -19,11 +19,12 @@ def _client(registry, alert_index) -> TestClient:
     return TestClient(app)
 
 
-def _fake_manager(stream_id="cam-1", url="rtsp://example/cam1", alert_event="fire"):
+def _fake_manager(stream_id="cam-1", url="rtsp://example/cam1"):
     manager = MagicMock()
     manager.stream_id = stream_id
     manager.source_url = url
-    manager.alert_event = alert_event
+    manager.vlm_prompt = "Find fire near ATM."
+    manager.deep_analyzer_prompt = "Verify event and summarize clip."
     manager.get_health.return_value = StreamHealth(publishing=True, resolution="640x360", codec="h264")
     return manager
 
@@ -43,6 +44,8 @@ class TestListStreams:
         assert streams[0]["stream_id"] == "cam-1"
         assert streams[0]["publishing"] is True
         assert streams[0]["alert_count"] == 3
+        assert streams[0]["alert_prompt"] == "Find fire near ATM."
+        assert streams[0]["deep_analyzer_prompt"] == "Verify event and summarize clip."
         assert streams[0]["whep_path"] == "/cam-1/whep"
 
     def test_includes_caption_history_in_payload(self):
@@ -85,7 +88,12 @@ class TestAddStream:
 
         response = _client(registry, alert_index).post(
             "/api/streams",
-            json={"url": "rtsp://example/cam1", "stream_id": "cam-1", "alert_event": "fire"},
+            json={
+                "url": "rtsp://example/cam1",
+                "stream_id": "cam-1",
+                "alert_prompt": "Look for smoke near the ATM.\nMention visible hazards.",
+                "deep_analyzer_prompt": "Analyze the segment and summarize visible threat evidence.",
+            },
         )
 
         assert response.status_code == 200
@@ -94,15 +102,20 @@ class TestAddStream:
         args, _kwargs = registry.add.call_args
         assert args[0] == "cam-1"
         assert args[1] == "rtsp://example/cam1"
-        assert "fire" in args[2]  # built prompt
-        assert args[3] == "fire"
+        assert args[2] == "Look for smoke near the ATM.\nMention visible hazards."
+        assert args[3] == "Analyze the segment and summarize visible threat evidence."
 
     def test_defaults_stream_id_when_omitted(self):
         registry = MagicMock()
         alert_index = MagicMock()
 
         response = _client(registry, alert_index).post(
-            "/api/streams", json={"url": "rtsp://example/cam1", "alert_event": "fire"}
+            "/api/streams",
+            json={
+                "url": "rtsp://example/cam1",
+                "alert_prompt": "Check for a visible firearm.",
+                "deep_analyzer_prompt": "Confirm firearm visibility from the clip and describe evidence.",
+            },
         )
 
         assert response.json()["stream_id"] == "default"
@@ -111,29 +124,29 @@ class TestAddStream:
         registry = MagicMock()
         alert_index = MagicMock()
 
-        response = _client(registry, alert_index).post("/api/streams", json={"alert_event": "fire"})
+        response = _client(registry, alert_index).post("/api/streams", json={})
 
         assert response.status_code == 400
         registry.add.assert_not_called()
 
-    def test_rejects_missing_alert_event(self):
+    def test_rejects_missing_alert_prompt(self):
         registry = MagicMock()
         alert_index = MagicMock()
 
         response = _client(registry, alert_index).post(
-            "/api/streams", json={"url": "rtsp://example/cam1", "alert_event": ""}
+            "/api/streams", json={"url": "rtsp://example/cam1", "alert_prompt": ""}
         )
 
         assert response.status_code == 400
         registry.add.assert_not_called()
 
-    def test_rejects_multiple_alert_events(self):
+    def test_rejects_missing_deep_analyzer_prompt(self):
         registry = MagicMock()
         alert_index = MagicMock()
 
         response = _client(registry, alert_index).post(
             "/api/streams",
-            json={"url": "rtsp://example/cam1", "alert_event": "fire, smoke"},
+            json={"url": "rtsp://example/cam1", "alert_prompt": "Look for smoke.", "deep_analyzer_prompt": ""},
         )
 
         assert response.status_code == 400
@@ -145,7 +158,13 @@ class TestAddStream:
         alert_index = MagicMock()
 
         response = _client(registry, alert_index).post(
-            "/api/streams", json={"url": "rtsp://example/cam1", "stream_id": "cam-1", "alert_event": "fire"}
+            "/api/streams",
+            json={
+                "url": "rtsp://example/cam1",
+                "stream_id": "cam-1",
+                "alert_prompt": "Look for smoke.",
+                "deep_analyzer_prompt": "Summarize the scene evidence for smoke.",
+            },
         )
 
         assert response.status_code == 409

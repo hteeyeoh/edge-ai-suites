@@ -30,6 +30,7 @@ class StreamRegistry:
         stream_id: str,
         source_url: str,
         vlm_prompt: str = "",
+        deep_analyzer_prompt: str = "",
         alert_event: str = "",
     ) -> StreamManager:
         """Create and start a new StreamManager for the given stream_id and source_url, and return it."""
@@ -41,10 +42,11 @@ class StreamRegistry:
             if len(self._streams) >= settings.MAX_STREAMS:
                 raise ValueError(f"Maximum of {settings.MAX_STREAMS} streams reached")
             manager = StreamManager(
-                stream_id,
-                source_url,
-                vlm_prompt,
-                alert_event,
+                stream_id=stream_id,
+                source_url=source_url,
+                vlm_prompt=vlm_prompt,
+                deep_analyzer_prompt=deep_analyzer_prompt,
+                alert_event=alert_event,
                 frame_registry=self.frame_registry,
             )
             self._streams[stream_id] = manager

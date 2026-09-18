@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 from __future__ import annotations
 
-from backend.config import build_alert_prompt
 from fastapi import APIRouter
 from fastapi import HTTPException
 
@@ -21,7 +20,8 @@ def build_stream_router(registry, alert_index) -> APIRouter:
                 {
                     "stream_id": manager.stream_id,
                     "url": manager.source_url,
-                    "alert_event": manager.alert_event,
+                    "alert_prompt": manager.vlm_prompt,
+                    "deep_analyzer_prompt": manager.deep_analyzer_prompt,
                     "publishing": act_stream.publishing,
                     "codec": act_stream.codec,
                     "resolution": act_stream.resolution,
@@ -43,24 +43,34 @@ def build_stream_router(registry, alert_index) -> APIRouter:
         """Add a new stream"""
         source_url = (payload or {}).get("url", "").strip()
         stream_id = (payload or {}).get("stream_id", "").strip() or "default"
-        alert_event = (payload or {}).get("alert_event", "")
-        normalized_alert_event = ""
-        if isinstance(alert_event, str):
-            normalized_alert_event = " ".join(alert_event.strip().split())
-        prompt = ""
+        alert_prompt = (payload or {}).get("alert_prompt", "")
+        deep_analyzer_prompt = (payload or {}).get("deep_analyzer_prompt", "")
+        normalized_alert_prompt = ""
+        normalized_deep_analyzer_prompt = ""
+        if isinstance(alert_prompt, str):
+            normalized_alert_prompt = alert_prompt.strip()
+        if isinstance(deep_analyzer_prompt, str):
+            normalized_deep_analyzer_prompt = deep_analyzer_prompt.strip()
         if not source_url:
             raise HTTPException(status_code=400, detail="'url' is required")
-        if not isinstance(alert_event, str) or not alert_event.strip():
+        if not isinstance(alert_prompt, str) or not alert_prompt.strip():
             raise HTTPException(
                 status_code=400,
-                detail="'alert_event' is required",
+                detail="'alert_prompt' is required",
             )
+        if not isinstance(deep_analyzer_prompt, str) or not deep_analyzer_prompt.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="'deep_analyzer_prompt' is required",
+            )
+
         try:
-            prompt = build_alert_prompt(normalized_alert_event)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
-        try:
-            registry.add(stream_id, source_url, prompt, normalized_alert_event)
+            registry.add(
+                stream_id,
+                source_url,
+                normalized_alert_prompt,
+                normalized_deep_analyzer_prompt,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc))
         return {"status": "added", "stream_id": stream_id}

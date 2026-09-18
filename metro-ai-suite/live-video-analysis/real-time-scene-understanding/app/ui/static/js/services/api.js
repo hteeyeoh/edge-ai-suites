@@ -30,11 +30,16 @@ export async function fetchStreams() {
     return Array.isArray(data.streams) ? data.streams : [];
 }
 
-export async function addStream({ streamId, url, alertEvent }) {
+export async function addStream({ streamId, url, alertPrompt, deepAnalyzerPrompt }) {
     const addResp = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stream_id: streamId, url, alert_event: alertEvent }),
+        body: JSON.stringify({
+            stream_id: streamId,
+            url,
+            alert_prompt: alertPrompt,
+            deep_analyzer_prompt: deepAnalyzerPrompt,
+        }),
     });
 
     if (!addResp.ok) {
