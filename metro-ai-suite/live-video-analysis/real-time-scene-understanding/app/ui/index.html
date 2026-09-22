@@ -87,17 +87,17 @@
                         <button type="button" class="field-help" aria-label="Alert Prompt help"
                             data-tooltip="Enter a prompt for single-frame VLM inference from input stream. Alert will be raised when the conditions in the prompt are met, and the description will be used for context in Deep Analyzer.">?</button>
                     </div>
-                    <textarea id="alert-prompt" name="alert_prompt" rows="4" maxlength="1200"
+                    <textarea id="alert-prompt" name="alert_prompt" rows="4" maxlength="2400"
                         placeholder="Describe this frame in 1 short sentence using only visible facts. Determine whether '{event}' is visible in this image, using only visual evidence from this image."
                         required></textarea>
 
                     <div class="field-label-row">
                         <label for="deep-analyzer-prompt">Deep Analyzer Prompt</label>
                         <button type="button" class="field-help" aria-label="Deep Analyzer Prompt help"
-                            data-tooltip="Enter a prompt for video-segment-level deep analyzer follow-up. VLM will use this to analyze and summarize detected threats from the alert.">?</button>
+                            data-tooltip="Enter a prompt for video-segment-level deep analyzer follow-up. VLM will use this to analyze and summarize detected events from the alert.">?</button>
                     </div>
-                    <textarea id="deep-analyzer-prompt" name="deep_analyzer_prompt" rows="4" maxlength="1600"
-                        placeholder="Analyze the frame sequence chronologically and determine whether the visible evidence supports the threat context. Summarize with event summary and key evidence. Use only visible evidence. Do not guess intent, identity, or anything outside the frames."
+		    <textarea id="deep-analyzer-prompt" name="deep_analyzer_prompt" rows="4" maxlength="2400"
+                        placeholder="Analyze the frame sequence chronologically and determine whether the visible evidence supports the event context. Summarize with event summary and key evidence. Use only visible evidence. Do not guess intent, identity, or anything outside the frames."
                         required></textarea>
                 </div>
             </section>
