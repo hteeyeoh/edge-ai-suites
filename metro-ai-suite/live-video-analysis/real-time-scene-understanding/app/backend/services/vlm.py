@@ -37,8 +37,11 @@ from . import utils
 logger = logging.getLogger(__name__)
 
 # JSON schema enforced on every VLM generation via StructuredOutputConfig, so the
-# model can only ever emit a valid {"threat": "Yes"|"No", "description": str}
+# model can only ever emit a valid {"decision": "Yes"|"No", "description": str}
 # object instead of free-form text that needs parsing.
+# The field is named 'decision' (not 'threat') so its meaning is "does the
+# prompt's described event match?" -- a 'threat' key biases the model toward
+# judging danger instead of answering the prompt's actual visibility question.
 # description's maxLength is derived from ALERT_VLM_MAX_TOKENS (see
 # _build_alert_verdict_schema), not fixed, so it never asks for more text than
 # the configured token budget can actually finish writing.
@@ -46,7 +49,7 @@ logger = logging.getLogger(__name__)
 # Rough English chars-per-token used to size description's maxLength; only
 # needs to be in the right ballpark since it just bounds worst-case length.
 _CHARS_PER_TOKEN = 4
-# Tokens reserved for the 'threat' field plus JSON punctuation/keys, leaving
+# Tokens reserved for the 'decision' field plus JSON punctuation/keys, leaving
 # the remainder of ALERT_VLM_MAX_TOKENS for the description text itself.
 _JSON_OVERHEAD_TOKENS = 20
 
@@ -64,16 +67,16 @@ def _build_alert_verdict_schema(max_new_tokens: int) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "threat": {"type": "string", "enum": ["Yes", "No"]},
+            "decision": {"type": "string", "enum": ["Yes", "No"]},
             "description": {"type": "string", "maxLength": max_length},
         },
-        "required": ["threat", "description"],
+        "required": ["decision", "description"],
         "additionalProperties": False,
     }
 
 
 def _parse_alert_verdict(raw_text: str) -> tuple[Optional[str], Optional[str]]:
-    """Extract (threat, description) from the model's JSON output.
+    """Extract (decision, description) from the model's JSON output.
 
     Parses the substring between the first '{' and last '}' (tolerates stray
     characters GenAI occasionally emits around it, e.g. a lone "!"). Returns
@@ -95,20 +98,20 @@ def _parse_alert_verdict(raw_text: str) -> tuple[Optional[str], Optional[str]]:
     if not isinstance(data, dict):
         return None, None
 
-    threat = data.get("threat")
+    decision = data.get("decision")
     description = data.get("description")
-    if not isinstance(threat, str) or not isinstance(description, str):
+    if not isinstance(decision, str) or not isinstance(description, str):
         return None, None
-    return threat, description
+    return decision, description
 
 
 def parse_yes_no(caption: str) -> Optional[bool]:
-    """Parse the 'Threat: Yes/No' line of a formatted alert caption into a bool.
+    """Parse the 'Decision: Yes/No' line of a formatted alert caption into a bool.
 
     Operates on the display string produced by VLMEngine._format_alert_caption
     (not the raw model JSON). Returns None when no verdict line is present.
     """
-    match = re.search(r"\bthreat\s*:\s*(yes|no)\b", str(caption or ""), flags=re.IGNORECASE)
+    match = re.search(r"\bdecision\s*:\s*(yes|no)\b", str(caption or ""), flags=re.IGNORECASE)
     if match is None:
         return None
     return match.group(1).lower() == "yes"
@@ -198,16 +201,16 @@ class VLMEngine:
 
     @staticmethod
     def _format_alert_caption(raw_text: str) -> Optional[str]:
-        """Render the schema-constrained JSON verdict as a 'Threat: .. / Description: ..' string.
+        """Render the schema-constrained JSON verdict as a 'Decision: .. / Description: ..' string.
 
         Returns None if the output wasn't a complete, valid verdict (e.g.
         truncated mid-description) -- callers should drop the response for
         this cycle rather than show a partial/malformed result.
         """
-        threat, description = _parse_alert_verdict(raw_text)
-        if threat is None or description is None:
+        decision, description = _parse_alert_verdict(raw_text)
+        if decision is None or description is None:
             return None
-        return f"Threat: {threat}\nDescription: {description}"
+        return f"Decision: {decision}\nDescription: {description}"
 
     def _dispatch_loop(self) -> None:
         """Single worker thread; the only caller of `_generate`, so no lock is needed there."""

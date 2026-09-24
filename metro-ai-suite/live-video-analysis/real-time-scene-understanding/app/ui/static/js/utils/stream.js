@@ -31,29 +31,29 @@ export function formatAlertPromptDetails(stream) {
         : "Alert Prompt: not provided";
 }
 
-const THREAT_RE = /threat\s*:\s*(yes|no)\b/i;
+const DECISION_RE = /decision\s*:\s*(yes|no)\b/i;
 const DESCRIPTION_RE = /description\s*:\s*([\s\S]*)$/i;
 
 /**
- * Split a VLM alert caption ("Threat: Yes/No\nDescription: ...") into its
+ * Split a VLM alert caption ("Decision: Yes/No\nDescription: ...") into its
  * parts. Falls back to treating the whole text as the description when it
  * doesn't match the expected shape (e.g. still loading, or a parse failure).
  */
 export function parseAlertCaption(captionText) {
     const text = String(captionText || "").trim();
-    if (!text) return { threat: null, description: "" };
+    if (!text) return { decision: null, description: "" };
 
-    const threatMatch = THREAT_RE.exec(text);
+    const decisionMatch = DECISION_RE.exec(text);
     const descriptionMatch = DESCRIPTION_RE.exec(text);
 
     return {
-        threat: threatMatch ? threatMatch[1].toLowerCase() : null,
+        decision: decisionMatch ? decisionMatch[1].toLowerCase() : null,
         description: descriptionMatch ? descriptionMatch[1].trim() : text,
     };
 }
 
 export function isAlertDetected(captionText) {
-    return parseAlertCaption(captionText).threat === "yes";
+    return parseAlertCaption(captionText).decision === "yes";
 }
 
 export function formatVlmMetrics(stream) {
@@ -89,23 +89,23 @@ export function formatVlmResponseHistory(stream, limit = 3) {
                 if (entry && typeof entry === "object") {
                     const raw = String(entry.response || "").trim();
                     if (!raw) return null;
-                    const { threat, description } = parseAlertCaption(raw);
+                    const { decision, description } = parseAlertCaption(raw);
                     return {
                         label: formatHistoryLabel(index),
                         timeLabel: formatStreamSeconds(entry.playback_seconds),
                         text: description,
-                        alert: threat === "yes",
+                        alert: decision === "yes",
                     };
                 }
 
                 const raw = String(entry || "").trim();
                 if (!raw) return null;
-                const { threat, description } = parseAlertCaption(raw);
+                const { decision, description } = parseAlertCaption(raw);
                 return {
                     label: formatHistoryLabel(index),
                     timeLabel: "",
                     text: description,
-                    alert: threat === "yes",
+                    alert: decision === "yes",
                 };
             })
             .filter(Boolean)
@@ -117,6 +117,6 @@ export function formatVlmResponseHistory(stream, limit = 3) {
 
     const latest = String(stream.caption || "").trim();
     if (!latest) return [];
-    const { threat, description } = parseAlertCaption(latest);
-    return [{ label: "Latest", timeLabel: "", text: description, alert: threat === "yes" }];
+    const { decision, description } = parseAlertCaption(latest);
+    return [{ label: "Latest", timeLabel: "", text: description, alert: decision === "yes" }];
 }
