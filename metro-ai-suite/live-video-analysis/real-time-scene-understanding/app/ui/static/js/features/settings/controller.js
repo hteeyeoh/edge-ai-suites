@@ -12,6 +12,8 @@ export function initSettingsMenu(elements) {
     const {
         settingsToggle,
         settingsPanel,
+        systemInfoToggle,
+        systemInfoPanel,
         settingsVlmModel,
         settingsVlmDevice,
         settingsVlmMaxTokens,
@@ -22,11 +24,22 @@ export function initSettingsMenu(elements) {
         settingsDeepMaxTokens,
     } = elements;
 
-    if (!settingsToggle || !settingsPanel) return;
+    const hasSettingsPopover = Boolean(settingsToggle && settingsPanel);
+    const hasSystemInfoPopover = Boolean(systemInfoToggle && systemInfoPanel);
+    if (!hasSettingsPopover && !hasSystemInfoPopover) return;
 
     const setSettingsOpen = (open) => {
+        if (!hasSettingsPopover) return;
+
         settingsPanel.classList.toggle("settings-panel--hidden", !open);
         settingsToggle.setAttribute("aria-expanded", String(open));
+    };
+
+    const setSystemInfoOpen = (open) => {
+        if (!hasSystemInfoPopover) return;
+
+        systemInfoPanel.classList.toggle("settings-panel--hidden", !open);
+        systemInfoToggle.setAttribute("aria-expanded", String(open));
     };
 
     if (settingsVlmModel) {
@@ -59,23 +72,41 @@ export function initSettingsMenu(elements) {
         }
     }
 
-    settingsToggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const willOpen = settingsPanel.classList.contains("settings-panel--hidden");
-        setSettingsOpen(willOpen);
-    });
+    if (hasSettingsPopover) {
+        settingsToggle.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const willOpen = settingsPanel.classList.contains("settings-panel--hidden");
+            setSettingsOpen(willOpen);
+            if (willOpen) setSystemInfoOpen(false);
+        });
 
-    settingsPanel.addEventListener("click", (event) => {
-        event.stopPropagation();
-    });
+        settingsPanel.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+    }
+
+    if (hasSystemInfoPopover) {
+        systemInfoToggle.addEventListener("click", (event) => {
+            event.stopPropagation();
+            const willOpen = systemInfoPanel.classList.contains("settings-panel--hidden");
+            setSystemInfoOpen(willOpen);
+            if (willOpen) setSettingsOpen(false);
+        });
+
+        systemInfoPanel.addEventListener("click", (event) => {
+            event.stopPropagation();
+        });
+    }
 
     document.addEventListener("click", () => {
         setSettingsOpen(false);
+        setSystemInfoOpen(false);
     });
 
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape") {
             setSettingsOpen(false);
+            setSystemInfoOpen(false);
         }
     });
 }

@@ -20,6 +20,8 @@ export const elements = {
 
     settingsToggle: document.getElementById("settings-toggle"),
     settingsPanel: document.getElementById("settings-panel"),
+    systemInfoToggle: document.getElementById("system-info-toggle"),
+    systemInfoPanel: document.getElementById("system-info-panel"),
     settingsVlmModel: document.getElementById("settings-vlm-model"),
     settingsVlmDevice: document.getElementById("settings-vlm-device"),
     settingsVlmMaxTokens: document.getElementById("settings-vlm-max-tokens"),
@@ -48,6 +50,10 @@ export const elements = {
     ramVal: document.getElementById("ram-val"),
     gpuVal: document.getElementById("gpu-val"),
     npuVal: document.getElementById("npu-val"),
+    hostCpuVal: document.getElementById("host-cpu-val"),
+    hostRamVal: document.getElementById("host-ram-val"),
+    hostGpuVal: document.getElementById("host-gpu-val"),
+    hostNpuVal: document.getElementById("host-npu-val"),
     metricsCanvas: document.getElementById("metrics-canvas"),
 };
 

@@ -14,51 +14,82 @@
     <header class="topbar">
         <h1>Real Time Scene Understanding</h1>
         <span id="status-pill" class="pill pill--idle">connecting…</span>
-        <div class="settings-menu">
-            <button id="settings-toggle" class="settings-toggle" type="button" aria-label="Open settings"
-                aria-expanded="false" title="Settings">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                    <path
-                        d="M10.88 2.25h2.24l.45 2.05c.43.14.84.32 1.23.53l1.84-1.03 1.58 1.58-1.03 1.84c.21.39.39.8.53 1.23l2.05.45v2.24l-2.05.45c-.14.43-.32.84-.53 1.23l1.03 1.84-1.58 1.58-1.84-1.03c-.39.21-.8.39-1.23.53l-.45 2.05h-2.24l-.45-2.05a7.6 7.6 0 0 1-1.23-.53l-1.84 1.03-1.58-1.58 1.03-1.84a7.6 7.6 0 0 1-.53-1.23l-2.05-.45V9.08l2.05-.45c.14-.43.32-.84.53-1.23L5.8 5.56 7.38 3.98l1.84 1.03c.39-.21.8-.39 1.23-.53l.43-2.23zm1.12 6.1a2.78 2.78 0 1 0 0 5.56 2.78 2.78 0 0 0 0-5.56z" />
-                </svg>
-            </button>
-            <div id="settings-panel" class="settings-panel settings-panel--hidden" role="dialog"
-                aria-label="VLM settings">
-                <h2>Settings</h2>
-                <details class="settings-group" open>
-                    <summary>Alert Pipeline Settings</summary>
+        <div class="topbar-actions">
+            <div class="topbar-menu">
+                <button id="system-info-toggle" class="settings-toggle" type="button"
+                    aria-label="Open system information" aria-expanded="false" title="System Information">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path
+                            d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 13.4a1.1 1.1 0 1 1 0 2.2 1.1 1.1 0 0 1 0-2.2zm1.2-2.65v.45h-2.4V8.4h2.4v5.35z" />
+                    </svg>
+                </button>
+                <div id="system-info-panel" class="settings-panel system-panel settings-panel--hidden" role="dialog"
+                    aria-label="System information">
+                    <h2>System Information</h2>
                     <div class="settings-row">
-                        <span>Vision model</span>
-                        <strong id="settings-vlm-model">-</strong>
+                        <span>CPU</span>
+                        <strong id="host-cpu-val">-</strong>
                     </div>
                     <div class="settings-row">
-                        <span>Inference Device</span>
-                        <strong id="settings-vlm-device">-</strong>
+                        <span>RAM</span>
+                        <strong id="host-ram-val">-</strong>
                     </div>
                     <div class="settings-row">
-                        <span>Max Tokens</span>
-                        <strong id="settings-vlm-max-tokens">-</strong>
-                    </div>
-                </details>
-                <details id="settings-deep-analyzer-group" class="settings-group" open>
-                    <summary>Deep Analyzer Pipeline Settings</summary>
-                    <div class="settings-row">
-                        <span>Vision model</span>
-                        <strong id="settings-deep-model">-</strong>
+                        <span>GPU</span>
+                        <strong id="host-gpu-val">-</strong>
                     </div>
                     <div class="settings-row">
-                        <span>Inference Device</span>
-                        <strong id="settings-deep-device">-</strong>
+                        <span>NPU</span>
+                        <strong id="host-npu-val">-</strong>
                     </div>
-                    <div class="settings-row">
-                        <span>Max Frames</span>
-                        <strong id="settings-deep-max-frames">-</strong>
-                    </div>
-                    <div class="settings-row">
-                        <span>Max Tokens</span>
-                        <strong id="settings-deep-max-tokens">-</strong>
-                    </div>
-                </details>
+                </div>
+            </div>
+            <div class="topbar-menu">
+                <button id="settings-toggle" class="settings-toggle" type="button" aria-label="Open settings"
+                    aria-expanded="false" title="Settings">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path
+                            d="M10.88 2.25h2.24l.45 2.05c.43.14.84.32 1.23.53l1.84-1.03 1.58 1.58-1.03 1.84c.21.39.39.8.53 1.23l2.05.45v2.24l-2.05.45c-.14.43-.32.84-.53 1.23l1.03 1.84-1.58 1.58-1.84-1.03c-.39.21-.8.39-1.23.53l-.45 2.05h-2.24l-.45-2.05a7.6 7.6 0 0 1-1.23-.53l-1.84 1.03-1.58-1.58 1.03-1.84a7.6 7.6 0 0 1-.53-1.23l-2.05-.45V9.08l2.05-.45c.14-.43.32-.84.53-1.23L5.8 5.56 7.38 3.98l1.84 1.03c.39-.21.8-.39 1.23-.53l.43-2.23zm1.12 6.1a2.78 2.78 0 1 0 0 5.56 2.78 2.78 0 0 0 0-5.56z" />
+                    </svg>
+                </button>
+                <div id="settings-panel" class="settings-panel settings-panel--hidden" role="dialog"
+                    aria-label="VLM settings">
+                    <h2>Settings</h2>
+                    <details class="settings-group" open>
+                        <summary>Alert Pipeline Settings</summary>
+                        <div class="settings-row">
+                            <span>Vision model</span>
+                            <strong id="settings-vlm-model">-</strong>
+                        </div>
+                        <div class="settings-row">
+                            <span>Inference Device</span>
+                            <strong id="settings-vlm-device">-</strong>
+                        </div>
+                        <div class="settings-row">
+                            <span>Max Tokens</span>
+                            <strong id="settings-vlm-max-tokens">-</strong>
+                        </div>
+                    </details>
+                    <details id="settings-deep-analyzer-group" class="settings-group" open>
+                        <summary>Deep Analyzer Pipeline Settings</summary>
+                        <div class="settings-row">
+                            <span>Vision model</span>
+                            <strong id="settings-deep-model">-</strong>
+                        </div>
+                        <div class="settings-row">
+                            <span>Inference Device</span>
+                            <strong id="settings-deep-device">-</strong>
+                        </div>
+                        <div class="settings-row">
+                            <span>Max Frames</span>
+                            <strong id="settings-deep-max-frames">-</strong>
+                        </div>
+                        <div class="settings-row">
+                            <span>Max Tokens</span>
+                            <strong id="settings-deep-max-tokens">-</strong>
+                        </div>
+                    </details>
+                </div>
             </div>
         </div>
     </header>
@@ -96,7 +127,7 @@
                         <button type="button" class="field-help" aria-label="Deep Analyzer Prompt help"
                             data-tooltip="Enter a prompt for video-segment-level deep analyzer follow-up. VLM will use this to analyze and summarize detected events from the alert.">?</button>
                     </div>
-		    <textarea id="deep-analyzer-prompt" name="deep_analyzer_prompt" rows="4" maxlength="2400"
+                    <textarea id="deep-analyzer-prompt" name="deep_analyzer_prompt" rows="4" maxlength="2400"
                         placeholder="Analyze the frame sequence chronologically and determine whether the visible evidence supports the event context. Summarize with event summary and key evidence. Use only visible evidence. Do not guess intent, identity, or anything outside the frames."
                         required></textarea>
                 </div>

@@ -25,12 +25,39 @@ function formatInstalledMemory(platform) {
     if (installedGiB === null || installedGiB <= 0) return null;
 
     const value = Number.isInteger(installedGiB) ? installedGiB : installedGiB.toFixed(2);
-    return `${value} GiB RAM`;
+    return `${value} GiB`;
 }
 
 export function hasOpenvinoGpuInference(device) {
     return Array.isArray(device && device.sw_functional_capabilities)
         && device.sw_functional_capabilities.includes("openvino_gpu_inference");
+}
+
+function readFirstString(source, keys) {
+    if (!source || typeof source !== "object") return null;
+
+    for (const key of keys) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim()) return value.trim();
+    }
+
+    return null;
+}
+
+function readCpuModelFromDevice(cpuDevice) {
+    if (!cpuDevice || typeof cpuDevice !== "object") return null;
+
+    return readFirstString(cpuDevice, ["commercial_reference", "name", "model"])
+        || readFirstString(cpuDevice.details, ["model_name", "model", "name"]);
+}
+
+function readDeviceModel(device, fallback) {
+    if (!device || typeof device !== "object") return fallback || null;
+
+    return readFirstString(device, ["commercial_reference", "name", "model"])
+        || readFirstString(device.details, ["model_name", "model", "name"])
+        || fallback
+        || null;
 }
 
 export function buildCapabilitiesFallback() {
@@ -115,4 +142,38 @@ export function buildMetricChipDetailMap(capabilities) {
     }
 
     return map;
+}
+
+export function buildHostSystemInfo(capabilities) {
+    const rawDevices = Array.isArray(capabilities && capabilities.devices) ? capabilities.devices : [];
+    const devices = rawDevices.filter((device) => device && device.present === true);
+    const platform = capabilities && capabilities.platform ? capabilities.platform : null;
+    const cpu = devices.find((device) => device.category === "cpu");
+    const gpus = devices.filter((device) => {
+        const category = device && device.category;
+        return (category === "igpu" || category === "dgpu") && hasOpenvinoGpuInference(device);
+    });
+    const npu = devices.find((device) => device.category === "npu");
+
+    const gpuModels = gpus
+        .map((gpu) => {
+            const model = readDeviceModel(gpu, "GPU");
+            const category = typeof gpu.category === "string" && gpu.category.trim()
+                ? gpu.category.trim().toLowerCase()
+                : null;
+
+            return category ? `${model} (${category})` : model;
+        })
+        .filter((name) => Boolean(name));
+
+    const uniqueGpuModels = Array.from(new Set(gpuModels));
+    const installedMemory = formatInstalledMemory(platform);
+
+    return {
+        cpuModel: readCpuModelFromDevice(cpu)
+            || "-",
+        ramTotal: installedMemory || "-",
+        gpuModel: uniqueGpuModels.length > 0 ? uniqueGpuModels.join(", ") : "-",
+        npuModel: readDeviceModel(npu, "NPU") || "-",
+    };
 }

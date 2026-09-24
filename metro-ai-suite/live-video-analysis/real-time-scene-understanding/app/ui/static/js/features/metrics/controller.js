@@ -6,10 +6,9 @@
  * Handles SSE metrics ingestion, chart rendering, and capability tooltips.
  */
 
-import { getMetricChips } from "../../dom/elements.js";
 import { getMetricsStreamUrl } from "../../config/runtime.js";
 import { fetchSystemCapabilities } from "../../services/api.js";
-import { buildMetricChipDetailMap } from "../../utils/capabilities.js";
+import { buildHostSystemInfo } from "../../utils/capabilities.js";
 
 const METRICS_HISTORY_LIMIT = 60;
 const METRICS_MAX_RECONNECT_ATTEMPTS = 10;
@@ -21,6 +20,10 @@ export function createMetricsController(elements) {
         ramVal,
         gpuVal,
         npuVal,
+        hostCpuVal,
+        hostRamVal,
+        hostGpuVal,
+        hostNpuVal,
         metricsCanvas,
     } = elements;
 
@@ -29,12 +32,6 @@ export function createMetricsController(elements) {
         reconnectTimer: null,
         reconnectAttempts: 0,
         history: [],
-        chipDetailsByType: {
-            cpu: [],
-            ram: [],
-            gpu: [],
-            npu: [],
-        },
     };
 
     function setMetricsConnection(connected) {
@@ -46,6 +43,18 @@ export function createMetricsController(elements) {
 
     function updateMetricValue(el, value) {
         el.textContent = value === null ? "-" : `${value.toFixed(1)}%`;
+    }
+
+    function updateSystemInfoValue(el, value) {
+        if (!el) return;
+
+        const normalized = typeof value === "string" && value.trim() ? value.trim() : "-";
+        const isDetected = normalized !== "-";
+
+        el.textContent = normalized;
+        el.classList.add("system-status-value");
+        el.classList.toggle("system-status-value--detected", isDetected);
+        el.classList.toggle("system-status-value--missing", !isDetected);
     }
 
     function drawMetricLine(ctx, samples, key, color, left, right, top, bottom) {
@@ -181,27 +190,17 @@ export function createMetricsController(elements) {
         }
     }
 
-    function refreshMetricChipTooltips() {
-        const chips = getMetricChips();
-        if (chips.length === 0) return;
-
-        chips.forEach((chip) => {
-            const chipType = String(chip.dataset.chip || "").trim().toLowerCase();
-            const lines = state.chipDetailsByType[chipType] || [];
-            if (!Array.isArray(lines) || lines.length === 0) {
-                chip.removeAttribute("title");
-                return;
-            }
-
-            const tooltipText = `${chipType.toUpperCase()} details\n- ${lines.join("\n- ")}`;
-            chip.setAttribute("title", tooltipText);
-        });
-    }
-
     async function loadSystemCapabilities() {
+        const chips = Array.from(document.querySelectorAll(".metric-chip[data-chip]"));
+        chips.forEach((chip) => chip.removeAttribute("title"));
+
         const capabilities = await fetchSystemCapabilities();
-        state.chipDetailsByType = buildMetricChipDetailMap(capabilities);
-        refreshMetricChipTooltips();
+        const hostInfo = buildHostSystemInfo(capabilities);
+
+        updateSystemInfoValue(hostCpuVal, hostInfo.cpuModel || "-");
+        updateSystemInfoValue(hostRamVal, hostInfo.ramTotal || "-");
+        updateSystemInfoValue(hostGpuVal, hostInfo.gpuModel || "-");
+        updateSystemInfoValue(hostNpuVal, hostInfo.npuModel || "-");
     }
 
     function connectMetricsStream() {

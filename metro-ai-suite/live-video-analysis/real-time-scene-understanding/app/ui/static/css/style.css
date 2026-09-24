@@ -33,8 +33,14 @@ body {
     border-bottom: 1px solid var(--border);
 }
 
-.settings-menu {
+.topbar-actions {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.topbar-menu {
     position: relative;
 }
 
@@ -77,6 +83,44 @@ body {
 
 .settings-panel--hidden {
     display: none;
+}
+
+.system-panel .settings-row {
+    display: grid;
+    grid-template-columns: 3.2rem 1fr;
+    justify-content: initial;
+    gap: 0.65rem;
+    margin: 0 0 0.45rem;
+}
+
+.system-panel .settings-row:last-child {
+    margin-bottom: 0;
+}
+
+.system-panel .settings-row strong {
+    justify-self: start;
+    text-align: left;
+}
+
+.system-panel .settings-row strong.system-status-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.system-panel .settings-row strong.system-status-value::before {
+    content: "";
+    width: 0.48rem;
+    height: 0.48rem;
+    border-radius: 999px;
+    background: rgba(248, 81, 73, 0.62);
+    box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.2);
+    flex: 0 0 auto;
+}
+
+.system-panel .settings-row strong.system-status-value.system-status-value--detected::before {
+    background: var(--ok);
+    box-shadow: 0 0 0 1px rgba(63, 185, 80, 0.3);
 }
 
 .settings-panel h2 {
