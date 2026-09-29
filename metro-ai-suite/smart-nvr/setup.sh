@@ -190,10 +190,10 @@ configure_scenescape_setup() {
         if [ "${SCENESCAPE_NVR_ONLY}" != "true" ]; then
             # Configure SI stack: compose + DL Streamer
             local dlstreamer_config="${metro_recipe_dir}/smart-intersection/src/dlstreamer-pipeline-server/config.json"
-            cp "./resources/compose-scenescape-rtsp.yml" "${metro_recipe_dir}/compose-scenescape.yml"
-            cp "./resources/si-rtsp-config.json" "${dlstreamer_config}"
-            sed -i "s/{RTSP_STREAM_IP}/${rtsp_ip}/g" "${dlstreamer_config}"
-            sed -i "s/{RTSP_STREAM_PORT}/${RTSP_STREAM_PORT}/g" "${dlstreamer_config}"
+            # cp "./resources/compose-scenescape-rtsp.yml" "${metro_recipe_dir}/compose-scenescape.yml"
+            # cp "./resources/si-rtsp-config.json" "${dlstreamer_config}"
+            # sed -i "s/{RTSP_STREAM_IP}/${rtsp_ip}/g" "${dlstreamer_config}"
+            # sed -i "s/{RTSP_STREAM_PORT}/${RTSP_STREAM_PORT}/g" "${dlstreamer_config}"
         fi
 
         if [ "${SCENESCAPE_SI_ONLY}" != "true" ]; then
