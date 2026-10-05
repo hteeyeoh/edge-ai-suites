@@ -17,6 +17,7 @@ from config import (
     SCENESCAPE_MQTT_BROKER,
     SCENESCAPE_MQTT_PORT,
     SCENESCAPE_MQTT_TOPIC,
+    SCENESCAPE_REGION_MQTT_TOPIC,
 )
 from model.broker import Broker
 from service import redis_store
@@ -130,7 +131,7 @@ async def load_yaml_brokers(path: str = BROKERS_CONFIG_PATH, request=None):
             await redis_store.save_broker(broker.id, broker.model_dump(), request)
 
     if NVR_SCENESCAPE_ENABLED and not await _has_scenescape(request):
-        legacy = Broker(
+        legacy_camera = Broker(
             id="si1",
             name="Smart Intersection 1",
             host=SCENESCAPE_MQTT_BROKER,
@@ -140,8 +141,22 @@ async def load_yaml_brokers(path: str = BROKERS_CONFIG_PATH, request=None):
             use_tls=True,
             rtsp_host=SCENESCAPE_MQTT_BROKER,
         )
-        await redis_store.save_broker(legacy.id, legacy.model_dump(), request)
-        logger.info("Seeded default si1 broker from environment")
+        legacy_region = Broker(
+            id="si1-region",
+            name="Smart Intersection 1 Region Events",
+            host=SCENESCAPE_MQTT_BROKER,
+            port=SCENESCAPE_MQTT_PORT,
+            topic=SCENESCAPE_REGION_MQTT_TOPIC,
+            type="scenescape",
+            use_tls=True,
+        )
+        await redis_store.save_broker(
+            legacy_camera.id, legacy_camera.model_dump(), request
+        )
+        await redis_store.save_broker(
+            legacy_region.id, legacy_region.model_dump(), request
+        )
+        logger.info("Seeded default si1 camera + region brokers from environment")
 
     await sync_yaml_from_redis(request=request, path=path)
 

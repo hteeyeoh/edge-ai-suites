@@ -3,13 +3,13 @@ services:
     container_name: frigate-vms
     image: ghcr.io/blakeblackshear/frigate:0.15.1
     restart: unless-stopped
-    shm_size: "1536mb" 
+    shm_size: "1536mb"
     networks:
       - nvr-network
     ports:
-      - "5000:5000" 
+      - "5000:5000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/config"]
+      test: [ "CMD", "curl", "-f", "http://localhost:5000/api/config" ]
       interval: 30s
       timeout: 20s
       retries: 10
@@ -25,14 +25,15 @@ services:
       - ../resources/videos:/videos # Add volume for video files
       - ../frigate-clips:/media/frigate/recordings
     depends_on:
-       mqtt-broker:
-         condition: service_healthy
+      mqtt-broker:
+        condition: service_healthy
     environment:
-      no_proxy: ${no_proxy}, frigate, ${VSS_IP}
-      NO_PROXY: ${no_proxy}, frigate, ${VSS_IP}
-      FRIGATE_MQTT_PASSWORD: ${MQTT_PASSWORD} 
+      no_proxy: ${no_proxy}, frigate, ${VSS_IP}, ${VLM_SERVING_IP}
+      NO_PROXY: ${no_proxy}, frigate, ${VSS_IP}, ${VLM_SERVING_IP}
+      FRIGATE_MQTT_PASSWORD: ${MQTT_PASSWORD}
       FRIGATE_MQTT_USER: ${MQTT_USER}
-  
+      OPENAI_BASE_URL: "http://${VLM_SERVING_IP}:${VLM_SERVING_PORT}/v1"
+      OPENAI_API_KEY: "your_openai_api_key"
   nvr-event-router:
     container_name: nvr-event-router
     image: ${REGISTRY}nvr-event-router:${TAG}
@@ -47,11 +48,11 @@ services:
     networks:
       - nvr-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
+      test: [ "CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://localhost:8000/health', timeout=5)" ]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 20s
+      retries: 10
+      start_period: 120s
     volumes:
       - ../src:/app
       - ../resources/broker-config:/app/resources/broker-config:rw
@@ -66,7 +67,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000" 
+      - "8000:8000"
     environment:
       MODE: "backend"
       FRIGATE_BASE_URL: "http://frigate-vms:5000"
@@ -77,8 +78,10 @@ services:
       BATCH_JOB_TIMEOUT_SECONDS: ${BATCH_JOB_TIMEOUT_SECONDS:-3600}
       no_proxy: ${no_proxy}, frigate-vms, ${VSS_IP}
       MQTT_USER: ${MQTT_USER}
-      MQTT_PASSWORD: ${MQTT_PASSWORD} 
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
       HOST_IP: ${HOST_IP}
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
       NVR_SCENESCAPE: ${NVR_SCENESCAPE}
       SCENESCAPE_MQTT_BROKER: ${SCENESCAPE_MQTT_BROKER:-${HOST_IP}}
       SCENESCAPE_MQTT_PORT: ${SCENESCAPE_MQTT_PORT:-1883}
@@ -93,7 +96,7 @@ services:
     networks:
       - nvr-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://localhost:7860/', timeout=5)"]
+      test: [ "CMD", "python", "-c", "import urllib.request as u; u.build_opener(u.ProxyHandler({})).open('http://localhost:7860/', timeout=5)" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -102,16 +105,19 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     depends_on:
-      - nvr-event-router
+      nvr-event-router:
+        condition: service_healthy
     ports:
       - "7860:7860"
     environment:
-      MODE: "ui" 
-      API_BASE_URL: "http://${HOST_IP}:8000" 
+      MODE: "ui"
+      API_BASE_URL: "http://nvr-event-router:8000"
       EVENT_POLL_INTERVAL: "10"
       NVR_SCENESCAPE: ${NVR_SCENESCAPE}
-      no_proxy: ${no_proxy}, frigate, nvr-event-router, ${VSS_IP}
-      
+      SCENESCAPE_API_BASE_URL: "https://metro-vision-ai-app-recipe-web-1"
+      SCENESCAPE_API_USER: ${SCENESCAPE_API_USER:-}
+      SCENESCAPE_API_PASSWORD: ${SCENESCAPE_API_PASSWORD:-}
+      no_proxy: ${no_proxy}, frigate, nvr-event-router, ${VSS_IP}, ${VLM_SERVING_IP}
   mqtt-broker:
     image: eclipse-mosquitto:2.0.21
     container_name: mqtt-broker
@@ -126,8 +132,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
-      MQTT_USER: ${MQTT_USER} 
-      MQTT_PASSWORD: ${MQTT_PASSWORD} 
+      MQTT_USER: ${MQTT_USER}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
     command: >
       sh -c "
         touch /mosquitto/config/pwfile &&
@@ -155,13 +161,13 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     ports:
-      - "6379:6379"  # Optional: expose Redis externally
+      - "6379:6379" # Optional: expose Redis externally
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 3
-      
+
 networks:
   nvr-network:
     driver: bridge
