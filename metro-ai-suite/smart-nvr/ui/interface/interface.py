@@ -20,6 +20,8 @@ from services.api_client import (
     fetch_camera_watcher_mapping,
     submit_camera_watcher_mapping,
     fetch_vss_features,
+    fetch_scenescape_scenes,
+    fetch_scenescape_regions,
 )
 from services.video_processor import process_video
 from services.event_utils import display_events
@@ -35,11 +37,9 @@ stop_event_thread = threading.Event()
 
 
 def initialize_app():
-    """Initialize application and fetch initial data."""
-    global camera_list
-    logger.info("Initializing app and fetching camera list...")
-    camera_list = fetch_cameras()
-    return camera_list
+    """Initialize lightweight UI state before building components."""
+    logger.info("Initializing app state...")
+    return []
 
 
 def stop_event_updates():
@@ -359,6 +359,40 @@ def create_ui():
             else:
                 rows.append([rule_id, "", "No search results available."])
         return rows
+
+    def get_scene_choices():
+        scenes = fetch_scenescape_scenes()
+        if not scenes:
+            return []
+        return [(s.get("name", s.get("id", "")), s.get("id", "")) for s in scenes]
+
+    def get_region_choices(scene_id):
+        regions = fetch_scenescape_regions(scene_id=scene_id or None)
+        choices = []
+        for region in regions:
+            region_id = region.get("region_id")
+            region_name = region.get("region_name") or region_id
+            if region_id:
+                choices.append((region_name, region_id))
+        return choices
+
+    def refresh_region_dropdown(scene_id):
+        choices = get_region_choices(scene_id)
+        if not choices:
+            return (
+                gr.update(choices=[], value=None),
+                gr.update(
+                    value=(
+                        "⚠️ Could not load regions from SceneScape API. "
+                        "Please verify API connectivity and try Refresh Regions."
+                    ),
+                    visible=True,
+                ),
+            )
+        return (
+            gr.update(choices=choices, value=choices[0][1]),
+            gr.update(visible=False, value=""),
+        )
 
     with gr.Blocks() as ui:
         gr.Markdown("## NVR Event Router")
@@ -859,6 +893,219 @@ def create_ui():
                 )
                 gr.Button("🔍 Refresh Search Responses").click(
                     fn=format_search_responses, outputs=[search_response_table]
+                )
+
+            # Tab 4: Region Events
+            with gr.TabItem("Region Events"):
+                scene_choices = get_scene_choices()
+                default_scene_id = scene_choices[0][1] if scene_choices else None
+                region_choices = get_region_choices(default_scene_id)
+                default_region_id = region_choices[0][1] if region_choices else None
+
+                with gr.Row():
+                    scene_dropdown = gr.Dropdown(
+                        choices=scene_choices,
+                        value=default_scene_id,
+                        label="Scene",
+                    )
+                    region_dropdown = gr.Dropdown(
+                        choices=region_choices,
+                        value=default_region_id,
+                        label="Select Regions",
+                    )
+                    region_event_dropdown = gr.Dropdown(
+                        choices=["Near Miss", "Zone Violation", "ROI Entry/Exit"],
+                        value="ROI Entry/Exit",
+                        label="Events Type",
+                    )
+                    region_action_dropdown = gr.Dropdown(
+                        choices=action_choices,
+                        value=default_action,
+                        label="Select Action",
+                    )
+                    add_region_rule_btn = gr.Button("➕ Add Rule")
+
+                with gr.Row():
+                    refresh_regions_btn = gr.Button("🔄 Refresh Regions")
+                    region_api_status = gr.Textbox(
+                        label="Region API Status",
+                        visible=not bool(region_choices),
+                        value=(
+                            "⚠️ Could not load regions from SceneScape API. "
+                            "Please verify API connectivity and try Refresh Regions."
+                            if not region_choices
+                            else ""
+                        ),
+                    )
+
+                scene_dropdown.change(
+                    fn=refresh_region_dropdown,
+                    inputs=[scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                )
+
+                refresh_regions_btn.click(
+                    fn=refresh_region_dropdown,
+                    inputs=[scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                )
+
+                with gr.Row():
+                    add_region_rule_alert = gr.Textbox(label="Status", visible=False)
+
+                def add_region_rule_with_auto_hide(scene_id, region_id, event_type, action):
+                    if not scene_id:
+                        yield gr.update(
+                            value="❌ Please select a scene.",
+                            visible=True,
+                        ), gr.update()
+                        time.sleep(3)
+                        yield gr.update(visible=False), gr.update()
+                        return
+
+                    if not region_id:
+                        yield gr.update(
+                            value="❌ Please select a region.",
+                            visible=True,
+                        ), gr.update()
+                        time.sleep(3)
+                        yield gr.update(visible=False), gr.update()
+                        return
+
+                    regions = fetch_scenescape_regions(scene_id=scene_id)
+                    selected = next((r for r in regions if r.get("region_id") == region_id), None)
+                    region_name = selected.get("region_name") if selected else region_id
+
+                    normalized_event_type = event_type.lower().replace(" ", "_").replace("/", "_")
+                    resp = add_rule(
+                        camera=None,
+                        label=normalized_event_type,
+                        action=action,
+                        source="scenescape",
+                        region_id=region_id,
+                        region_name=region_name,
+                        scene_id=scene_id,
+                        event_type=normalized_event_type,
+                    )
+                    message = resp.get("message") if isinstance(resp, dict) else str(resp)
+
+                    yield gr.update(value=message, visible=True), load_region_rules()
+                    time.sleep(3)
+                    yield gr.update(visible=False), gr.update()
+
+                gr.Markdown("### Current Rules")
+                region_delete_status = gr.Textbox(label="Deletion Status", visible=False)
+                region_last_deleted_state = gr.State(value=None)
+                region_headers = [
+                    "ID",
+                    "Source",
+                    "Scene",
+                    "Region",
+                    "Event Type",
+                    "Action",
+                    "Delete",
+                ]
+                region_datatypes = ["str", "str", "str", "str", "str", "str", "str"]
+
+                region_rules_table = gr.Dataframe(
+                    headers=region_headers,
+                    datatype=region_datatypes,
+                    interactive=False,
+                )
+                refresh_region_rules_btn = gr.Button("🔄 Refresh Rules")
+
+                def load_region_rules():
+                    rules = fetch_rules()
+                    scenes = fetch_scenescape_scenes()
+                    scene_name_by_id = {
+                        str(s.get("id")): str(s.get("name") or s.get("id"))
+                        for s in scenes
+                        if s.get("id")
+                    }
+                    rows = []
+                    for r in rules:
+                        source = (r.get("source") or "frigate").lower()
+                        region_id = r.get("region_id")
+                        event_type = r.get("event_type")
+                        # Include explicit region rules and legacy scenescape rules.
+                        if not region_id and not event_type and source != "scenescape":
+                            continue
+                        scene_id = r.get("scene_id")
+                        scene_display = (
+                            r.get("scene_name")
+                            or scene_name_by_id.get(str(scene_id), scene_id)
+                            or "-"
+                        )
+                        rows.append(
+                            [
+                                r.get("id", "-"),
+                                r.get("source", "frigate"),
+                                scene_display,
+                                r.get("region_name") or region_id or "-",
+                                event_type or r.get("label", "-"),
+                                r.get("action", "-"),
+                                "🗑️ Delete",
+                            ]
+                        )
+                    return rows
+
+                def delete_selected_region_rule(evt: gr.SelectData, last_del_id):
+                    if evt.index[1] != len(region_headers) - 1:
+                        yield gr.update(visible=False), gr.update(), last_del_id
+                        return
+
+                    rule_id = str(evt.row_value[0]) if evt.row_value and evt.row_value[0] else None
+                    if not rule_id or rule_id == last_del_id:
+                        yield gr.update(visible=False), gr.update(), last_del_id
+                        return
+
+                    try:
+                        result = delete_rule_by_id(rule_id)
+                        new_state, table_update = rule_id, load_region_rules()
+                    except Exception as e:
+                        logger.error(f"Error deleting region rule: {str(e)}")
+                        result = f"Error: {str(e)}"
+                        new_state, table_update = last_del_id, gr.update()
+
+                    yield gr.update(value=result, visible=True), table_update, new_state
+                    time.sleep(3)
+                    yield gr.update(visible=False), gr.update(), None
+
+                add_region_rule_btn.click(
+                    fn=add_region_rule_with_auto_hide,
+                    inputs=[scene_dropdown, region_dropdown, region_event_dropdown, region_action_dropdown],
+                    outputs=[add_region_rule_alert, region_rules_table],
+                )
+                refresh_region_rules_btn.click(fn=load_region_rules, outputs=[region_rules_table])
+
+                region_rules_table.select(
+                    fn=delete_selected_region_rule,
+                    inputs=[region_last_deleted_state],
+                    outputs=[region_delete_status, region_rules_table, region_last_deleted_state],
+                )
+
+                ui.load(fn=load_region_rules, outputs=[region_rules_table])
+                gr.Markdown("### Rule Responses")
+
+                region_summary_response_table = gr.Dataframe(
+                    headers=["Rule ID", "Summary ID", "Message"],
+                    datatype=["str", "str", "str"],
+                    label="Summary Responses",
+                    interactive=False,
+                )
+
+                gr.Button("🔄 Refresh Summary Responses").click(
+                    fn=format_summary_responses, outputs=[region_summary_response_table]
+                )
+
+                region_search_response_table = gr.Dataframe(
+                    headers=["Rule ID", "Video ID", "Message"],
+                    datatype=["str", "str", "str"],
+                    label="Search Responses",
+                    interactive=False,
+                )
+                gr.Button("🔍 Refresh Search Responses").click(
+                    fn=format_search_responses, outputs=[region_search_response_table]
                 )
 
     return ui

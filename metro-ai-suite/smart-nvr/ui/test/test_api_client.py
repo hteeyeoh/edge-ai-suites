@@ -97,6 +97,27 @@ def test_add_rule_post_error(mock_post, mock_get):
     assert "Post failed" in result["message"]
 
 
+@patch("ui.services.api_client.requests.post")
+@patch("ui.services.api_client.requests.get")
+def test_add_rule_region_event_id_format(mock_get, mock_post):
+    mock_get.return_value = MagicMock(status_code=404)
+    mock_post.return_value = MagicMock(status_code=200)
+
+    result = add_rule(
+        camera=None,
+        label="roi_entry_exit",
+        action="Add to Search",
+        source="scenescape",
+        region_id="region-123",
+        region_name="Intersection Zone A",
+        scene_id="scene-001",
+        event_type="roi_entry_exit",
+    )
+
+    assert result["status"] == "success"
+    assert result["rule_id"].startswith("scenescape-intersection_zone_a-roi_entry_exit-add_to_search-")
+
+
 # === fetch_rules ===
 @patch("ui.services.api_client.requests.get")
 def test_fetch_rules_success(mock_get):

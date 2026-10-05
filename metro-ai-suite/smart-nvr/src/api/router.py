@@ -141,6 +141,10 @@ class Rule(BaseModel):
     camera: str | None = None
     source: str | None = None
     count: int | None = None
+    region_id: str | None = None
+    region_name: str | None = None
+    scene_id: str | None = None
+    event_type: str | None = None
 
 
 @router.post("/rules/")
