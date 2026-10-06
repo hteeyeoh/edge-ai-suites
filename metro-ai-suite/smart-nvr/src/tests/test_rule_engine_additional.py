@@ -77,3 +77,111 @@ async def test_process_event_threshold_pedestrian_missing_and_present():
         # Only second event triggers dispatch
         assert dispatch.await_count == 1
         assert event_present.get("rule_id") == "r_ok"
+
+
+@pytest.mark.asyncio
+async def test_process_event_region_metadata_match_and_mismatch():
+    from service import rule_engine
+
+    rules = [
+        {
+            "id": "r_region",
+            "label": "near_miss",
+            "action": "add to search",
+            "source": "scenescape",
+            "region_id": "region-001",
+            "scene_id": "scene-001",
+            "event_type": "near_miss",
+        }
+    ]
+    good_event = {
+        "label": "near_miss",
+        "event_type": "near_miss",
+        "region_id": "region-001",
+        "scene_id": "scene-001",
+        "camera": "si1-camera1",
+        "start_time": 1.0,
+        "end_time": 2.0,
+    }
+    bad_event = {
+        "label": "near_miss",
+        "event_type": "near_miss",
+        "region_id": "region-XYZ",
+        "scene_id": "scene-001",
+        "camera": "si1-camera1",
+        "start_time": 1.0,
+        "end_time": 2.0,
+    }
+
+    with patch("service.rule_engine.get_rules", AsyncMock(return_value=rules)), \
+         patch("service.rule_engine.dispatch_action", AsyncMock(return_value={"ok": True})) as dispatch, \
+         patch("service.rule_engine.store_response", AsyncMock()) as store:
+        await rule_engine.process_event(good_event, context={"source": "scenescape"})
+        await rule_engine.process_event(bad_event, context={"source": "scenescape"})
+        assert dispatch.await_count == 1
+        assert store.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_process_event_region_rule_skips_camera_topic():
+    from service import rule_engine
+
+    rules = [
+        {
+            "id": "r_zone",
+            "label": "zone_violation",
+            "action": "add to search",
+            "source": "scenescape",
+            "region_id": "region-001",
+            "scene_id": "scene-001",
+            "event_type": "zone_violation",
+        }
+    ]
+    camera_event = {
+        "label": "vehicle",
+        "camera": "si1-camera1",
+        "num_vehicles": 3,
+        "num_pedestrians": 0,
+    }
+
+    with patch("service.rule_engine.get_rules", AsyncMock(return_value=rules)), \
+         patch("service.rule_engine.dispatch_action", AsyncMock(return_value={"ok": True})) as dispatch, \
+         patch("service.rule_engine.store_response", AsyncMock()) as store:
+        await rule_engine.process_event(
+            camera_event,
+            context={"source": "scenescape", "topic": "scenescape/data/camera/camera1"},
+        )
+        dispatch.assert_not_called()
+        store.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_event_camera_rule_skips_region_topic():
+    from service import rule_engine
+
+    rules = [
+        {
+            "id": "r_cam",
+            "label": "vehicle",
+            "camera": "si1-camera1",
+            "action": "add to search",
+            "source": "scenescape",
+        }
+    ]
+    region_event = {
+        "label": "vehicle",
+        "camera": "si1-camera1",
+        "scene_id": "scene-001",
+        "region_id": "region-001",
+        "event_type": "count",
+    }
+
+    with patch("service.rule_engine.get_rules", AsyncMock(return_value=rules)), \
+         patch("service.rule_engine.dispatch_action", AsyncMock(return_value={"ok": True})) as dispatch, \
+         patch("service.rule_engine.store_response", AsyncMock()) as store:
+        await rule_engine.process_event(
+            region_event,
+            context={"source": "scenescape", "topic": "scenescape/event/region/scene-001/region-001/count"},
+        )
+        dispatch.assert_not_called()
+        store.assert_not_called()
