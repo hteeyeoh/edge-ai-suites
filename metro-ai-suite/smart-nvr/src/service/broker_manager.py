@@ -36,6 +36,21 @@ def _tls_context() -> ssl.SSLContext:
     return ctx
 
 
+def _reason_code_to_int(code) -> int:
+    """Best-effort conversion for aiomqtt/paho reason-code values."""
+    if isinstance(code, int):
+        return code
+
+    value = getattr(code, "value", None)
+    if isinstance(value, int):
+        return value
+
+    try:
+        return int(code)
+    except (TypeError, ValueError):
+        return -1
+
+
 async def _dispatch(broker: Broker, payload, topic, state):
     async with _semaphore:
         if broker.type == "frigate":
@@ -53,8 +68,23 @@ async def _run_broker(broker: Broker):
                 port=broker.port,
                 tls_context=_tls_context() if broker.use_tls else None,
             ) as client:
-                await client.subscribe(broker.topic, qos=1)
-                logger.info(f"[{broker.id}] subscribed to {broker.topic} at {broker.host}:{broker.port}")
+                suback = await client.subscribe(broker.topic, qos=1)
+                if isinstance(suback, tuple):
+                    granted_raw = list(suback)
+                else:
+                    granted_raw = list(suback)
+
+                granted = [_reason_code_to_int(code) for code in granted_raw]
+
+                # MQTT SUBACK return code 128 indicates a rejected subscription.
+                if any(code == 128 for code in granted):
+                    logger.error(
+                        f"[{broker.id}] subscription rejected for topic {broker.topic} at {broker.host}:{broker.port} (SUBACK={granted_raw})"
+                    )
+                else:
+                    logger.info(
+                        f"[{broker.id}] subscribed to {broker.topic} at {broker.host}:{broker.port} (SUBACK={granted_raw})"
+                    )
                 async for message in client.messages:
                     topic = str(message.topic)
                     try:

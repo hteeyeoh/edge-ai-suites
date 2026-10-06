@@ -45,3 +45,16 @@ async def test_load_yaml_brokers_seeds_camera_and_region(monkeypatch, tmp_path):
     assert "si1-region" in saved
     assert saved["si1"]["topic"] == "scenescape/data/camera/#"
     assert saved["si1-region"]["topic"] == "scenescape/event/region/+/+/+"
+
+
+def test_reason_code_to_int_handles_common_shapes():
+    class WithValue:
+        value = 128
+
+    class NotConvertible:
+        def __int__(self):
+            raise TypeError("nope")
+
+    assert broker_manager._reason_code_to_int(1) == 1
+    assert broker_manager._reason_code_to_int(WithValue()) == 128
+    assert broker_manager._reason_code_to_int(NotConvertible()) == -1
