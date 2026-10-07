@@ -656,6 +656,11 @@ def create_ui():
 
             # Tab 3: Auto-Route Rules
             with gr.TabItem("Auto-Route Events"):
+                scene_choices = get_scene_choices()
+                default_scene_id = scene_choices[0][1] if scene_choices else None
+                region_choices = get_region_choices(default_scene_id)
+                default_region_id = region_choices[0][1] if region_choices else None
+
                 with gr.Row():
                     source_dropdown = gr.Dropdown(
                         choices=["scenescape"] if show_scenescape_source else ["frigate"],
@@ -663,10 +668,31 @@ def create_ui():
                         value="scenescape" if show_scenescape_source else "frigate",
                     )
 
+                    topic_dropdown = gr.Dropdown(
+                        choices=["camera", "region"] if show_scenescape_source else ["camera"],
+                        value="camera",
+                        label="Select Topic",
+                    )
+
                     camera_dropdown = gr.Dropdown(
                         choices=camera_list,
                         value=camera_list[0] if camera_list else None,
-                        label="Select Camera"
+                        label="Select Camera",
+                        visible=True,
+                    )
+
+                    scene_dropdown = gr.Dropdown(
+                        choices=scene_choices,
+                        value=default_scene_id,
+                        label="Scene",
+                        visible=False,
+                    )
+
+                    region_dropdown = gr.Dropdown(
+                        choices=region_choices,
+                        value=default_region_id,
+                        label="Select Region",
+                        visible=False,
                     )
 
                     if show_scenescape_source:
@@ -675,7 +701,8 @@ def create_ui():
                         label_filter = gr.Dropdown(
                             choices=SCENESCAPE_LABELS,
                             value=SCENESCAPE_LABELS[0],
-                            label="Detection Labels"
+                            label="Detection Labels",
+                            multiselect=False,
                         )
 
                         count = gr.Number(
@@ -684,6 +711,20 @@ def create_ui():
                             precision=0,
                             interactive=True,
                             visible=True,
+                        )
+                        region_vehicle_count = gr.Number(
+                            label="Vehicle Count",
+                            value=0,
+                            precision=0,
+                            interactive=True,
+                            visible=False,
+                        )
+                        region_pedestrian_count = gr.Number(
+                            label="Pedestrian Count",
+                            value=0,
+                            precision=0,
+                            interactive=True,
+                            visible=False,
                         )
                     else:
                         # Original layout for frigate-only
@@ -694,25 +735,28 @@ def create_ui():
                             interactive=True,
                             visible=False,
                         )
-
-                    def toggle_count_visibility(source):
-                        if source == "scenescape":
-                            return gr.update(visible=True)
-                        else:
-                            return gr.update(visible=False, value=0)
-
-                    source_dropdown.change(
-                        fn=toggle_count_visibility,
-                        inputs=[source_dropdown],
-                        outputs=[count],
-                    )
+                        region_vehicle_count = gr.Number(
+                            label="Vehicle Count",
+                            value=0,
+                            precision=0,
+                            interactive=True,
+                            visible=False,
+                        )
+                        region_pedestrian_count = gr.Number(
+                            label="Pedestrian Count",
+                            value=0,
+                            precision=0,
+                            interactive=True,
+                            visible=False,
+                        )
 
                     if not show_scenescape_source:
                         # Only create label_filter for frigate-only mode
                         label_filter = gr.Dropdown(
                             choices=[],
                             value=None,
-                            label="Detection Labels"
+                            label="Detection Labels",
+                            multiselect=False,
                         )
 
                     action_dropdown_auto = gr.Dropdown(
@@ -720,7 +764,179 @@ def create_ui():
                         value=default_action,
                         label="Select Action",
                     )
-                    add_rule_btn = gr.Button("➕ Add Rule")
+                    with gr.Column(scale=0, min_width=220):
+                        add_rule_btn = gr.Button("➕ Add Rule")
+                        refresh_regions_btn = gr.Button(
+                            "🔄 Refresh Regions",
+                            visible=False,
+                            variant="secondary",
+                        )
+
+                with gr.Row():
+                    region_api_status = gr.Textbox(
+                        label="Region API Status",
+                        visible=False,
+                        value="",
+                    )
+
+                def refresh_regions_for_scene(scene_id):
+                    resolved_scene_id = scene_id
+                    if not resolved_scene_id:
+                        latest_scenes = get_scene_choices()
+                        if latest_scenes:
+                            resolved_scene_id = latest_scenes[0][1]
+
+                    choices = get_region_choices(resolved_scene_id)
+                    if not choices:
+                        # First-load recovery path: SceneScape region indexing/auth can lag
+                        # briefly after UI load, so retry with refreshed scene context.
+                        latest_scenes = get_scene_choices()
+                        if latest_scenes and resolved_scene_id not in {s[1] for s in latest_scenes}:
+                            resolved_scene_id = latest_scenes[0][1]
+                        choices = get_region_choices(resolved_scene_id)
+
+                    if not choices and resolved_scene_id:
+                        # Fallback to unfiltered regions if scene-scoped query is still empty.
+                        choices = get_region_choices(None)
+
+                    if not choices:
+                        return (
+                            gr.update(choices=[], value=None, visible=True),
+                            gr.update(
+                                value=(
+                                    "⚠️ Could not load regions from SceneScape API. "
+                                    "Please verify API connectivity and try Refresh Regions."
+                                ),
+                                visible=True,
+                            ),
+                        )
+                    return (
+                        gr.update(choices=choices, value=choices[0][1], visible=True),
+                        gr.update(visible=False, value=""),
+                    )
+
+                def update_topic_controls(source, topic, scene_id):
+                    is_region = topic == "region"
+                    is_scenescape = source == "scenescape"
+
+                    camera_update = gr.update(visible=not is_region)
+
+                    if is_region:
+                        latest_scene_choices = get_scene_choices()
+                        valid_scene_ids = {choice[1] for choice in latest_scene_choices}
+                        resolved_scene_id = scene_id if scene_id in valid_scene_ids else None
+                        if not resolved_scene_id and latest_scene_choices:
+                            resolved_scene_id = latest_scene_choices[0][1]
+
+                        scene_update = gr.update(
+                            choices=latest_scene_choices,
+                            value=resolved_scene_id,
+                            visible=True,
+                        )
+                        region_update = gr.update(visible=True)
+                        region_status_update = gr.update(visible=False, value="")
+                        refresh_btn_update = gr.update(visible=True)
+                        count_update = gr.update(visible=False, value=0)
+                        region_vehicle_count_update = gr.update(visible=is_scenescape, value=0)
+                        region_pedestrian_count_update = gr.update(visible=is_scenescape, value=0)
+                        if show_scenescape_source:
+                            label_update = gr.update(
+                                choices=SCENESCAPE_LABELS,
+                                value=list(SCENESCAPE_LABELS),
+                                multiselect=True,
+                                visible=True,
+                            )
+                        else:
+                            label_update = gr.update(visible=False)
+                    else:
+                        scene_update = gr.update(visible=False)
+                        region_update = gr.update(visible=False)
+                        region_status_update = gr.update(visible=False, value="")
+                        refresh_btn_update = gr.update(visible=False)
+                        count_update = gr.update(visible=is_scenescape)
+                        region_vehicle_count_update = gr.update(visible=False, value=0)
+                        region_pedestrian_count_update = gr.update(visible=False, value=0)
+                        if show_scenescape_source:
+                            label_update = gr.update(
+                                choices=SCENESCAPE_LABELS,
+                                value=SCENESCAPE_LABELS[0],
+                                multiselect=False,
+                                visible=True,
+                            )
+                        else:
+                            label_update = gr.update(visible=True)
+
+                    return (
+                        camera_update,
+                        scene_update,
+                        region_update,
+                        region_status_update,
+                        refresh_btn_update,
+                        label_update,
+                        count_update,
+                        region_vehicle_count_update,
+                        region_pedestrian_count_update,
+                    )
+
+                def load_regions_if_region(topic, scene_id):
+                    if topic != "region":
+                        return gr.update(), gr.update(visible=False, value="")
+                    return refresh_regions_for_scene(scene_id)
+
+                def update_region_count_interactivity(topic, labels):
+                    selected_labels = labels if isinstance(labels, list) else ([labels] if labels else [])
+                    normalized_labels = {str(label).lower() for label in selected_labels if label}
+                    is_region = topic == "region"
+                    return (
+                        gr.update(interactive=is_region and "vehicle" in normalized_labels),
+                        gr.update(interactive=is_region and "pedestrian" in normalized_labels),
+                    )
+
+                topic_dropdown.change(
+                    fn=update_topic_controls,
+                    inputs=[source_dropdown, topic_dropdown, scene_dropdown],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                ).then(
+                    fn=load_regions_if_region,
+                    inputs=[topic_dropdown, scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                ).then(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
+                )
+
+                source_dropdown.change(
+                    fn=update_topic_controls,
+                    inputs=[source_dropdown, topic_dropdown, scene_dropdown],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                ).then(
+                    fn=load_regions_if_region,
+                    inputs=[topic_dropdown, scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                ).then(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
+                )
+
+                label_filter.change(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
+                )
+
+                scene_dropdown.change(
+                    fn=refresh_regions_for_scene,
+                    inputs=[scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                )
+
+                refresh_regions_btn.click(
+                    fn=refresh_regions_for_scene,
+                    inputs=[scene_dropdown],
+                    outputs=[region_dropdown, region_api_status],
+                )
 
                 #  Trigger label load when dropdown loads (first time)
                 if not show_scenescape_source:
@@ -738,21 +954,15 @@ def create_ui():
                         outputs=[label_filter]
                     )
 
+                ui.load(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
+                )
+
 
                 with gr.Row():
                     add_rule_alert = gr.Textbox(label="Status", visible=False)
-
-                # Callback to add rule and show alert
-                def add_rule_callback(camera, label, action, source, count_value):
-                    resp = add_rule(
-                        camera,
-                        label,
-                        action,
-                        source,
-                        count_value if source == "scenescape" else None,
-                    )
-                    message = resp
-                    return gr.update(value=message, visible=True)
 
                 #  Hide alert after delay
                 def delayed_hide():
@@ -761,9 +971,20 @@ def create_ui():
 
                 #  Show alert on rule add
                 #  Combined logic: show message, sleep, hide
-                def add_rule_with_auto_hide(source, count_value, camera, label, action):
+                def add_rule_with_auto_hide(
+                    source,
+                    topic,
+                    count_value,
+                    region_vehicle_count_value,
+                    region_pedestrian_count_value,
+                    camera,
+                    scene_id,
+                    region_id,
+                    label,
+                    action,
+                ):
                     threshold = None
-                    if source == "scenescape":
+                    if source == "scenescape" and topic == "camera":
                         try:
                             threshold = int(count_value)
                             if threshold < 0:
@@ -777,12 +998,104 @@ def create_ui():
                             yield gr.update(visible=False), gr.update()
                             return
 
+                    selected_camera = camera
+                    selected_region_id = None
+                    selected_region_name = None
+                    selected_scene_id = None
+                    selected_label = label
+                    selected_region_thresholds = None
+
+                    if topic == "region":
+                        if not scene_id:
+                            yield gr.update(
+                                value="❌ Please select a scene.",
+                                visible=True,
+                            ), gr.update()
+                            time.sleep(3)
+                            yield gr.update(visible=False), gr.update()
+                            return
+
+                        if not region_id:
+                            yield gr.update(
+                                value="❌ Please select a region.",
+                                visible=True,
+                            ), gr.update()
+                            time.sleep(3)
+                            yield gr.update(visible=False), gr.update()
+                            return
+
+                        selected_camera = None
+                        selected_scene_id = scene_id
+                        selected_region_id = region_id
+                        regions = fetch_scenescape_regions(scene_id=scene_id)
+                        selected = next((r for r in regions if r.get("region_id") == region_id), None)
+                        selected_region_name = selected.get("region_name") if selected else region_id
+                        selected_label = "region_event"
+
+                        if source == "scenescape":
+                            selected_labels = label if isinstance(label, list) else ([label] if label else [])
+                            selected_labels = [str(lbl).lower() for lbl in selected_labels if lbl]
+                            if not selected_labels:
+                                yield gr.update(
+                                    value="❌ Please select at least one Detection Label for region rules.",
+                                    visible=True,
+                                ), gr.update()
+                                time.sleep(3)
+                                yield gr.update(visible=False), gr.update()
+                                return
+
+                            selected_region_thresholds = {}
+                            if "vehicle" in selected_labels:
+                                try:
+                                    v_count = int(region_vehicle_count_value)
+                                    if v_count < 0:
+                                        raise ValueError
+                                    selected_region_thresholds["vehicle"] = v_count
+                                except (TypeError, ValueError):
+                                    yield gr.update(
+                                        value="❌ Vehicle Count must be a non-negative integer.",
+                                        visible=True,
+                                    ), gr.update()
+                                    time.sleep(3)
+                                    yield gr.update(visible=False), gr.update()
+                                    return
+
+                            if "pedestrian" in selected_labels:
+                                try:
+                                    p_count = int(region_pedestrian_count_value)
+                                    if p_count < 0:
+                                        raise ValueError
+                                    selected_region_thresholds["pedestrian"] = p_count
+                                except (TypeError, ValueError):
+                                    yield gr.update(
+                                        value="❌ Pedestrian Count must be a non-negative integer.",
+                                        visible=True,
+                                    ), gr.update()
+                                    time.sleep(3)
+                                    yield gr.update(visible=False), gr.update()
+                                    return
+
+                            if not selected_region_thresholds:
+                                yield gr.update(
+                                    value="❌ Please select vehicle and/or pedestrian for region rules.",
+                                    visible=True,
+                                ), gr.update()
+                                time.sleep(3)
+                                yield gr.update(visible=False), gr.update()
+                                return
+
+                        threshold = None
+
                     resp = add_rule(
-                        camera,
-                        label,
+                        selected_camera,
+                        selected_label,
                         action,
                         source,
                         threshold,
+                        region_id=selected_region_id,
+                        region_name=selected_region_name,
+                        scene_id=selected_scene_id,
+                        region_thresholds=selected_region_thresholds,
                     )
                     message = (
                         resp.get("message") if isinstance(resp, dict) else str(resp)
@@ -813,7 +1126,7 @@ def create_ui():
                 if show_scenescape_source:
                     headers.append("Count")
                     datatypes.append("str")
-                headers.extend(["Camera", "Label", "Action", "Delete"])
+                headers.extend(["Camera/Region", "Label", "Action", "Delete"])
                 datatypes.extend(["str", "str", "str", "str"])
 
                 rules_table = gr.Dataframe(
@@ -827,10 +1140,23 @@ def create_ui():
                     rules = fetch_rules()
                     rows = []
                     for r in rules:
+                        target_display = r.get("camera") or r.get("region_name") or r.get("region_id") or "-"
+                        label_display = r.get("label", "-")
+                        if r.get("region_thresholds"):
+                            threshold_labels = sorted(r.get("region_thresholds", {}).keys())
+                            if threshold_labels:
+                                label_display = ", ".join(threshold_labels)
                         row = [r["id"], r.get("source", "frigate")]
                         if show_scenescape_source:
-                            row.append(str(r.get("count", "-")))
-                        row.extend([r.get("camera", "-"), r.get("label", "-"), r.get("action", "-"), "🗑️ Delete"])
+                            if r.get("region_thresholds"):
+                                thresholds = r.get("region_thresholds")
+                                threshold_text = ", ".join(
+                                    f"{k}:{v}" for k, v in sorted(thresholds.items())
+                                )
+                                row.append(threshold_text)
+                            else:
+                                row.append(str(r.get("count", "-")))
+                        row.extend([target_display, label_display, r.get("action", "-"), "🗑️ Delete"])
                         rows.append(row)
                     return rows
 
@@ -859,7 +1185,18 @@ def create_ui():
                 # Event handlers
                 add_rule_btn.click(
                     fn=add_rule_with_auto_hide,
-                    inputs=[source_dropdown, count, camera_dropdown, label_filter, action_dropdown_auto],
+                    inputs=[
+                        source_dropdown,
+                        topic_dropdown,
+                        count,
+                        region_vehicle_count,
+                        region_pedestrian_count,
+                        camera_dropdown,
+                        scene_dropdown,
+                        region_dropdown,
+                        label_filter,
+                        action_dropdown_auto,
+                    ],
                     outputs=[add_rule_alert, rules_table],
                 )
                 refresh_rules_btn.click(fn=load_rules, outputs=[rules_table])
@@ -893,219 +1230,6 @@ def create_ui():
                 )
                 gr.Button("🔍 Refresh Search Responses").click(
                     fn=format_search_responses, outputs=[search_response_table]
-                )
-
-            # Tab 4: Region Events
-            with gr.TabItem("Region Events"):
-                scene_choices = get_scene_choices()
-                default_scene_id = scene_choices[0][1] if scene_choices else None
-                region_choices = get_region_choices(default_scene_id)
-                default_region_id = region_choices[0][1] if region_choices else None
-
-                with gr.Row():
-                    scene_dropdown = gr.Dropdown(
-                        choices=scene_choices,
-                        value=default_scene_id,
-                        label="Scene",
-                    )
-                    region_dropdown = gr.Dropdown(
-                        choices=region_choices,
-                        value=default_region_id,
-                        label="Select Regions",
-                    )
-                    region_event_dropdown = gr.Dropdown(
-                        choices=["Near Miss", "Zone Violation", "ROI Entry/Exit"],
-                        value="ROI Entry/Exit",
-                        label="Events Type",
-                    )
-                    region_action_dropdown = gr.Dropdown(
-                        choices=action_choices,
-                        value=default_action,
-                        label="Select Action",
-                    )
-                    add_region_rule_btn = gr.Button("➕ Add Rule")
-
-                with gr.Row():
-                    refresh_regions_btn = gr.Button("🔄 Refresh Regions")
-                    region_api_status = gr.Textbox(
-                        label="Region API Status",
-                        visible=not bool(region_choices),
-                        value=(
-                            "⚠️ Could not load regions from SceneScape API. "
-                            "Please verify API connectivity and try Refresh Regions."
-                            if not region_choices
-                            else ""
-                        ),
-                    )
-
-                scene_dropdown.change(
-                    fn=refresh_region_dropdown,
-                    inputs=[scene_dropdown],
-                    outputs=[region_dropdown, region_api_status],
-                )
-
-                refresh_regions_btn.click(
-                    fn=refresh_region_dropdown,
-                    inputs=[scene_dropdown],
-                    outputs=[region_dropdown, region_api_status],
-                )
-
-                with gr.Row():
-                    add_region_rule_alert = gr.Textbox(label="Status", visible=False)
-
-                def add_region_rule_with_auto_hide(scene_id, region_id, event_type, action):
-                    if not scene_id:
-                        yield gr.update(
-                            value="❌ Please select a scene.",
-                            visible=True,
-                        ), gr.update()
-                        time.sleep(3)
-                        yield gr.update(visible=False), gr.update()
-                        return
-
-                    if not region_id:
-                        yield gr.update(
-                            value="❌ Please select a region.",
-                            visible=True,
-                        ), gr.update()
-                        time.sleep(3)
-                        yield gr.update(visible=False), gr.update()
-                        return
-
-                    regions = fetch_scenescape_regions(scene_id=scene_id)
-                    selected = next((r for r in regions if r.get("region_id") == region_id), None)
-                    region_name = selected.get("region_name") if selected else region_id
-
-                    normalized_event_type = event_type.lower().replace(" ", "_").replace("/", "_")
-                    resp = add_rule(
-                        camera=None,
-                        label=normalized_event_type,
-                        action=action,
-                        source="scenescape",
-                        region_id=region_id,
-                        region_name=region_name,
-                        scene_id=scene_id,
-                        event_type=normalized_event_type,
-                    )
-                    message = resp.get("message") if isinstance(resp, dict) else str(resp)
-
-                    yield gr.update(value=message, visible=True), load_region_rules()
-                    time.sleep(3)
-                    yield gr.update(visible=False), gr.update()
-
-                gr.Markdown("### Current Rules")
-                region_delete_status = gr.Textbox(label="Deletion Status", visible=False)
-                region_last_deleted_state = gr.State(value=None)
-                region_headers = [
-                    "ID",
-                    "Source",
-                    "Scene",
-                    "Region",
-                    "Event Type",
-                    "Action",
-                    "Delete",
-                ]
-                region_datatypes = ["str", "str", "str", "str", "str", "str", "str"]
-
-                region_rules_table = gr.Dataframe(
-                    headers=region_headers,
-                    datatype=region_datatypes,
-                    interactive=False,
-                )
-                refresh_region_rules_btn = gr.Button("🔄 Refresh Rules")
-
-                def load_region_rules():
-                    rules = fetch_rules()
-                    scenes = fetch_scenescape_scenes()
-                    scene_name_by_id = {
-                        str(s.get("id")): str(s.get("name") or s.get("id"))
-                        for s in scenes
-                        if s.get("id")
-                    }
-                    rows = []
-                    for r in rules:
-                        source = (r.get("source") or "frigate").lower()
-                        region_id = r.get("region_id")
-                        event_type = r.get("event_type")
-                        # Include explicit region rules and legacy scenescape rules.
-                        if not region_id and not event_type and source != "scenescape":
-                            continue
-                        scene_id = r.get("scene_id")
-                        scene_display = (
-                            r.get("scene_name")
-                            or scene_name_by_id.get(str(scene_id), scene_id)
-                            or "-"
-                        )
-                        rows.append(
-                            [
-                                r.get("id", "-"),
-                                r.get("source", "frigate"),
-                                scene_display,
-                                r.get("region_name") or region_id or "-",
-                                event_type or r.get("label", "-"),
-                                r.get("action", "-"),
-                                "🗑️ Delete",
-                            ]
-                        )
-                    return rows
-
-                def delete_selected_region_rule(evt: gr.SelectData, last_del_id):
-                    if evt.index[1] != len(region_headers) - 1:
-                        yield gr.update(visible=False), gr.update(), last_del_id
-                        return
-
-                    rule_id = str(evt.row_value[0]) if evt.row_value and evt.row_value[0] else None
-                    if not rule_id or rule_id == last_del_id:
-                        yield gr.update(visible=False), gr.update(), last_del_id
-                        return
-
-                    try:
-                        result = delete_rule_by_id(rule_id)
-                        new_state, table_update = rule_id, load_region_rules()
-                    except Exception as e:
-                        logger.error(f"Error deleting region rule: {str(e)}")
-                        result = f"Error: {str(e)}"
-                        new_state, table_update = last_del_id, gr.update()
-
-                    yield gr.update(value=result, visible=True), table_update, new_state
-                    time.sleep(3)
-                    yield gr.update(visible=False), gr.update(), None
-
-                add_region_rule_btn.click(
-                    fn=add_region_rule_with_auto_hide,
-                    inputs=[scene_dropdown, region_dropdown, region_event_dropdown, region_action_dropdown],
-                    outputs=[add_region_rule_alert, region_rules_table],
-                )
-                refresh_region_rules_btn.click(fn=load_region_rules, outputs=[region_rules_table])
-
-                region_rules_table.select(
-                    fn=delete_selected_region_rule,
-                    inputs=[region_last_deleted_state],
-                    outputs=[region_delete_status, region_rules_table, region_last_deleted_state],
-                )
-
-                ui.load(fn=load_region_rules, outputs=[region_rules_table])
-                gr.Markdown("### Rule Responses")
-
-                region_summary_response_table = gr.Dataframe(
-                    headers=["Rule ID", "Summary ID", "Message"],
-                    datatype=["str", "str", "str"],
-                    label="Summary Responses",
-                    interactive=False,
-                )
-
-                gr.Button("🔄 Refresh Summary Responses").click(
-                    fn=format_summary_responses, outputs=[region_summary_response_table]
-                )
-
-                region_search_response_table = gr.Dataframe(
-                    headers=["Rule ID", "Video ID", "Message"],
-                    datatype=["str", "str", "str"],
-                    label="Search Responses",
-                    interactive=False,
-                )
-                gr.Button("🔍 Refresh Search Responses").click(
-                    fn=format_search_responses, outputs=[region_search_response_table]
                 )
 
     return ui

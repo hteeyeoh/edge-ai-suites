@@ -45,3 +45,15 @@ def test_get_clip_from_timestamps_stream_success():
     with patch('api.endpoints.frigate_api.requests.get', return_value=fake_stream):
         resp = service.get_clip_from_timestamps('garage', 1, 3)
         assert resp.media_type == 'video/mp4'
+
+
+def test_get_clip_from_timestamps_rounds_outward():
+    service = FrigateService(base_url='http://fake')
+    fake_stream = MagicMock()
+    fake_stream.iter_content = lambda chunk_size: [b'a']
+    fake_stream.headers = {}
+    fake_stream.raise_for_status = lambda: None
+    with patch('api.endpoints.frigate_api.requests.get', return_value=fake_stream) as mget:
+        service.get_clip_from_timestamps('garage', 10.9, 20.1)
+        url = mget.call_args[0][0]
+        assert '/start/10/end/21/' in url

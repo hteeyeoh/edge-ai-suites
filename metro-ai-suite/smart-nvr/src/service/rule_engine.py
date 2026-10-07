@@ -33,7 +33,7 @@ async def process_event(event: dict, context: dict = None):
         is_camera_topic = event_topic.startswith("scenescape/data/camera/")
         is_region_topic = event_topic.startswith("scenescape/event/region/")
         is_region_rule = bool(
-            rule.get("region_id") or rule.get("scene_id") or rule.get("event_type")
+            rule.get("region_id") or rule.get("scene_id")
         )
         if is_region_rule and event_topic and not event_topic.startswith("scenescape/event/region/"):
             logger.debug(
@@ -48,9 +48,41 @@ async def process_event(event: dict, context: dict = None):
             )
             continue
 
-        if rule.get("label") != event.get("label"):
-            logger.debug("Rule did not match: label mismatch.")
-            continue
+        region_thresholds = rule.get("region_thresholds") if is_region_rule else None
+        if region_thresholds:
+            matched_all_thresholds = True
+            for label_name, threshold in region_thresholds.items():
+                normalized_label = str(label_name).lower()
+                event_count = (
+                    event.get("num_pedestrians")
+                    if normalized_label == "pedestrian"
+                    else event.get("num_vehicles")
+                )
+
+                if event_count is None:
+                    logger.debug(
+                        "Rule did not match: %s count missing on event when rule requires it.",
+                        normalized_label,
+                    )
+                    matched_all_thresholds = False
+                    break
+
+                if event_count < int(threshold):
+                    logger.debug(
+                        "Rule did not match: %s count %s below threshold %s.",
+                        normalized_label,
+                        event_count,
+                        threshold,
+                    )
+                    matched_all_thresholds = False
+                    break
+
+            if not matched_all_thresholds:
+                continue
+        else:
+            if rule.get("label") != event.get("label"):
+                logger.debug("Rule did not match: label mismatch.")
+                continue
 
         if rule.get("camera") and rule["camera"] != event.get("camera"):
             logger.debug("Rule did not match: camera mismatch.")
@@ -72,12 +104,8 @@ async def process_event(event: dict, context: dict = None):
             logger.debug("Rule did not match: scene_id mismatch.")
             continue
 
-        if rule.get("event_type") and rule.get("event_type") != event.get("event_type"):
-            logger.debug("Rule did not match: event_type mismatch.")
-            continue
-
         threshold = rule.get("count")
-        if threshold is not None:
+        if threshold is not None and not region_thresholds:
             # count based on the event_label
             event_label = event.get("label", "").lower()
             if event_label == "pedestrian":

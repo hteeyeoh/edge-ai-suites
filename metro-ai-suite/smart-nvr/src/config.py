@@ -37,3 +37,23 @@ BROKERS_CONFIG_PATH = os.getenv("BROKERS_CONFIG_PATH", "resources/broker-config/
 MAX_CONCURRENT_EVENTS = int(os.getenv("MAX_CONCURRENT_EVENTS", 50))
 BROKER_RECONNECT_DELAY = float(os.getenv("BROKER_RECONNECT_DELAY", 5.0))
 
+# SceneScape API integration settings
+SCENESCAPE_API_BASE_URL = os.getenv(
+	"SCENESCAPE_API_BASE_URL", "http://metro-vision-ai-app-recipe-web-1"
+)
+SCENESCAPE_API_VERIFY_SSL = (
+	os.getenv("SCENESCAPE_API_VERIFY_SSL", "false").lower() == "true"
+)
+SCENESCAPE_API_AUTH_PATH = os.getenv("SCENESCAPE_API_AUTH_PATH", "/api/v1/auth")
+SCENESCAPE_API_USER = os.getenv(
+	"SCENESCAPE_API_USER", os.getenv("SCENESCAPE_USER", "")
+)
+SCENESCAPE_API_PASSWORD = os.getenv(
+	"SCENESCAPE_API_PASSWORD", os.getenv("SCENESCAPE_PASS", "")
+)
+SCENESCAPE_API_TIMEOUT_SEC = int(os.getenv("SCENESCAPE_API_TIMEOUT_SEC", "4"))
+SCENESCAPE_API_RETRY_COUNT = int(os.getenv("SCENESCAPE_API_RETRY_COUNT", "3"))
+SCENESCAPE_API_RETRY_DELAY_SEC = float(
+	os.getenv("SCENESCAPE_API_RETRY_DELAY_SEC", "0.6")
+)
+

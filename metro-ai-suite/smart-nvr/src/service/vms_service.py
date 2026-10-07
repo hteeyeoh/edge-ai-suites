@@ -3,6 +3,7 @@
 import asyncio
 import requests
 import os
+import time
 import tempfile
 import subprocess
 import aiofiles
@@ -25,6 +26,8 @@ logging.basicConfig(
 
 frigate_service = FrigateService()
 summarization_service = SummarizationService()
+FRIGATE_CLIP_END_BUFFER_SECONDS = 2.0
+FRIGATE_CLIP_MAX_WAIT_SECONDS = 5.0
 
 
 class VmsService:
@@ -46,22 +49,22 @@ class VmsService:
             if cleaned and cleaned not in candidates:
                 candidates.append(cleaned)
 
-        _add(camera_name)
-
-        # Region-stream synthetic names may not exist in Frigate.
+        # Region-stream synthetic names never exist in Frigate, so derive the real
+        # camera name first and skip the guaranteed-to-fail synthetic lookup.
+        derived_real_name: Optional[str] = None
         if camera_name.endswith("-region-region"):
             base = camera_name[: -len("-region-region")]
-            _add(f"{base}-camera1")
-            _add(base)
-
-        if camera_name.endswith("-region"):
+            derived_real_name = f"{base}-camera1"
+        elif camera_name.endswith("-region"):
             base = camera_name[: -len("-region")]
-            _add(f"{base}-camera1")
-            _add(base)
+            derived_real_name = f"{base}-camera1"
+        elif "-region-" in camera_name:
+            derived_real_name = camera_name.replace("-region-", "-", 1)
 
-        # If camera looks like <si>-region-<cam>, also try <si>-<cam>.
-        if "-region-" in camera_name:
-            _add(camera_name.replace("-region-", "-", 1))
+        if derived_real_name:
+            _add(derived_real_name)
+        else:
+            _add(camera_name)
 
         if available_cameras:
             # Prefer cameras sharing the same SI prefix (e.g. si1-*).
@@ -77,7 +80,13 @@ class VmsService:
         return candidates
 
     async def upload_video_to_summarizer(
-        self, camera_name: str, start_time: float, end_time: float, is_search: bool
+        self,
+        camera_name: str,
+        start_time: float,
+        end_time: float,
+        is_search: bool,
+        upload_tag: Optional[str] = None,
+        apply_end_buffer: bool = False,
     ) -> dict:
         """Fetches clip from Frigate, writes to temp file, uploads it, and returns videoId."""
         available_cameras: list[str] = []
@@ -92,6 +101,20 @@ class VmsService:
             f"Clip retrieval camera candidates for requested camera '{camera_name}': {camera_candidates}"
         )
 
+        retrieval_start_time = float(start_time)
+        retrieval_end_time = float(end_time)
+        if apply_end_buffer:
+            # Wait for the window to pass rather than shrinking it: clamping the end time
+            # can cut off the window before the event itself when processed near-real-time.
+            ready_at = retrieval_end_time + FRIGATE_CLIP_END_BUFFER_SECONDS
+            wait_seconds = min(ready_at - time.time(), FRIGATE_CLIP_MAX_WAIT_SECONDS)
+            if wait_seconds > 0:
+                logger.info(
+                    f"Delaying clip retrieval by {wait_seconds:.2f}s so Frigate can finalize "
+                    f"the recording (start={retrieval_start_time}, end={retrieval_end_time})."
+                )
+                await asyncio.sleep(wait_seconds)
+
         tmp_path = ""
         temp_file_size = 0
         selected_camera = None
@@ -101,14 +124,15 @@ class VmsService:
                 stream_response = await asyncio.to_thread(
                     self.frigate_service.get_clip_from_timestamps,
                     candidate_camera,
-                    start_time,
-                    end_time,
+                    retrieval_start_time,
+                    retrieval_end_time,
                     download=True,
                 )
                 logger.info(f"Clip retrieved from Frigate for camera '{candidate_camera}'.")
             except Exception as e:
                 logger.warning(
-                    f"Failed to get clip for camera '{candidate_camera}' (start={start_time}, end={end_time}): {e}"
+                    f"Failed to get clip for camera '{candidate_camera}' "
+                    f"(start={retrieval_start_time}, end={retrieval_end_time}): {e}"
                 )
                 continue
 
@@ -162,14 +186,14 @@ class VmsService:
                     self.summarization_service.video_upload,
                     tmp_path,
                     self.vss_search_url,
-                    selected_camera,
+                    upload_tag or selected_camera,
                 )
             else:
                 upload_result = await asyncio.to_thread(
                     self.summarization_service.video_upload,
                     tmp_path,
                     self.vss_summary_url,
-                    selected_camera,
+                    upload_tag or selected_camera,
                 )
 
             if not upload_result or "videoId" not in upload_result:
@@ -192,7 +216,12 @@ class VmsService:
                 logger.warning(f"Failed to remove temporary file: {e}")
 
     async def summarize(
-        self, camera_name: str, start_time: float, end_time: float
+        self,
+        camera_name: str,
+        start_time: float,
+        end_time: float,
+        upload_tag: Optional[str] = None,
+        apply_end_buffer: bool = False,
     ) -> dict:
         logger.info(
             f"Starting summarization for camera: {camera_name}, "
@@ -200,7 +229,12 @@ class VmsService:
         )
 
         upload_resp = await self.upload_video_to_summarizer(
-            camera_name, start_time, end_time, False
+            camera_name,
+            start_time,
+            end_time,
+            False,
+            upload_tag=upload_tag,
+            apply_end_buffer=apply_end_buffer,
         )
         if upload_resp["status"] != 200:
             return upload_resp
@@ -272,7 +306,12 @@ class VmsService:
         return {"summary": video_summary}
 
     async def search_embeddings(
-        self, camera_name: str, start_time: float, end_time: float
+        self,
+        camera_name: str,
+        start_time: float,
+        end_time: float,
+        upload_tag: Optional[str] = None,
+        apply_end_buffer: bool = False,
     ) -> dict:
         """
         Uploads video from the specified camera and time range,
@@ -287,7 +326,12 @@ class VmsService:
 
         try:
             upload_resp = await self.upload_video_to_summarizer(
-                camera_name, start_time, end_time, True
+                camera_name,
+                start_time,
+                end_time,
+                True,
+                upload_tag=upload_tag,
+                apply_end_buffer=apply_end_buffer,
             )
             if upload_resp["status"] != 200:
                 return upload_resp

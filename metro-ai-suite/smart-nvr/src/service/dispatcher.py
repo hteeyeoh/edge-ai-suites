@@ -17,6 +17,12 @@ async def dispatch_action(action: str, event: dict):
     if action == "summarize":
         try:
             camera_name = event.get("camera")
+            is_region_event = bool(event.get("region_id") or event.get("scene_id"))
+            upload_tag = (
+                event.get("region_name") or event.get("region_id")
+                if is_region_event
+                else camera_name
+            )
             start_time = event.get("start_time")
             end_time = event.get("end_time")
 
@@ -30,6 +36,8 @@ async def dispatch_action(action: str, event: dict):
                 camera_name=camera_name,
                 start_time=start_time,
                 end_time=end_time,
+                upload_tag=upload_tag,
+                apply_end_buffer=is_region_event,
             )
             if summary_response["status"] != 200:
                 logger.info(summary_response)
@@ -60,6 +68,12 @@ async def dispatch_action(action: str, event: dict):
     elif action == "add to search":
         try:
             camera_name = event.get("camera")
+            is_region_event = bool(event.get("region_id") or event.get("scene_id"))
+            upload_tag = (
+                event.get("region_name") or event.get("region_id")
+                if is_region_event
+                else camera_name
+            )
             start_time = event.get("start_time")
             end_time = event.get("end_time")
 
@@ -73,6 +87,8 @@ async def dispatch_action(action: str, event: dict):
                 camera_name=camera_name,
                 start_time=start_time,
                 end_time=end_time,
+                upload_tag=upload_tag,
+                apply_end_buffer=is_region_event,
             )
 
             # Save summary_id under the rule
