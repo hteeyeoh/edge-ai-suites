@@ -137,8 +137,8 @@ async def stop_all():
         await stop_broker(broker_id)
 
 
-async def _has_scenescape(request=None) -> bool:
-    return any(b.get("type") == "scenescape" for b in await redis_store.get_brokers(request))
+async def _has_broker_with_topic(topic: str, request=None) -> bool:
+    return any(b.get("topic") == topic for b in await redis_store.get_brokers(request))
 
 
 async def load_yaml_brokers(path: str = BROKERS_CONFIG_PATH, request=None):
@@ -160,33 +160,43 @@ async def load_yaml_brokers(path: str = BROKERS_CONFIG_PATH, request=None):
             broker = Broker(**entry)
             await redis_store.save_broker(broker.id, broker.model_dump(), request)
 
-    if NVR_SCENESCAPE_ENABLED and not await _has_scenescape(request):
-        legacy_camera = Broker(
-            id="si1",
-            name="Smart Intersection 1",
-            host=SCENESCAPE_MQTT_BROKER,
-            port=SCENESCAPE_MQTT_PORT,
-            topic=SCENESCAPE_MQTT_TOPIC,
-            type="scenescape",
-            use_tls=True,
-            rtsp_host=SCENESCAPE_MQTT_BROKER,
-        )
-        legacy_region = Broker(
-            id="si1-region",
-            name="Smart Intersection 1 Region Events",
-            host=SCENESCAPE_MQTT_BROKER,
-            port=SCENESCAPE_MQTT_PORT,
-            topic=SCENESCAPE_REGION_MQTT_TOPIC,
-            type="scenescape",
-            use_tls=True,
-        )
-        await redis_store.save_broker(
-            legacy_camera.id, legacy_camera.model_dump(), request
-        )
-        await redis_store.save_broker(
-            legacy_region.id, legacy_region.model_dump(), request
-        )
-        logger.info("Seeded default si1 camera + region brokers from environment")
+    # Check camera/region topics independently: brokers.yaml (e.g. reset by setup.sh
+    # start) commonly already has a camera-topic si1, which previously caused the
+    # region-topic seed below to be skipped because "a scenescape broker" existed.
+    if NVR_SCENESCAPE_ENABLED:
+        has_camera = await _has_broker_with_topic(SCENESCAPE_MQTT_TOPIC, request)
+        has_region = await _has_broker_with_topic(SCENESCAPE_REGION_MQTT_TOPIC, request)
+
+        if not has_camera:
+            legacy_camera = Broker(
+                id="si1",
+                name="Smart Intersection 1",
+                host=SCENESCAPE_MQTT_BROKER,
+                port=SCENESCAPE_MQTT_PORT,
+                topic=SCENESCAPE_MQTT_TOPIC,
+                type="scenescape",
+                use_tls=True,
+                rtsp_host=SCENESCAPE_MQTT_BROKER,
+            )
+            await redis_store.save_broker(
+                legacy_camera.id, legacy_camera.model_dump(), request
+            )
+            logger.info("Seeded default si1 camera broker from environment")
+
+        if not has_region:
+            legacy_region = Broker(
+                id="si1-region",
+                name="Smart Intersection 1 Region Events",
+                host=SCENESCAPE_MQTT_BROKER,
+                port=SCENESCAPE_MQTT_PORT,
+                topic=SCENESCAPE_REGION_MQTT_TOPIC,
+                type="scenescape",
+                use_tls=True,
+            )
+            await redis_store.save_broker(
+                legacy_region.id, legacy_region.model_dump(), request
+            )
+            logger.info("Seeded default si1-region broker from environment")
 
     await sync_yaml_from_redis(request=request, path=path)
 

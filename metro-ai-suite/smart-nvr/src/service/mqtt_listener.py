@@ -17,12 +17,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mqtt-listener")
 
 
-# Deterministic policy thresholds for derived region events.
-NEAR_MISS_MAX_DISTANCE_M = 2.0
-NEAR_MISS_MIN_RELATIVE_VELOCITY_MPS = 1.0
-NEAR_MISS_MAX_TIME_WINDOW_S = 3.0
-
-
 async def process_scenescape_objects(objects, scenescape_camera, start_time, end_time, num_vehicles, num_pedestrians, msg_topic):
     """Process scenescape objects and trigger events for each object type."""
     for obj_type, obj_list in objects.items():
@@ -120,15 +114,106 @@ def _extract_region_ids(payload: Dict[str, Any], topic: str) -> (str, str):
     return str(scene_id) if scene_id else "", str(region_id) if region_id else ""
 
 
-def _extract_topic_event_type(topic: str) -> str:
-    # Expected topic: scenescape/event/region/<scene_id>/<region_id>/<event_type>
-    parts = topic.split("/")
-    if len(parts) >= 6 and parts[0] == "scenescape" and parts[1] == "event" and parts[2] == "region":
-        return str(parts[5]).strip().lower()
-    return ""
+def _extract_region_cameras_from_visibility(payload: Dict[str, Any]) -> List[str]:
+    cameras: List[str] = []
+
+    def _add_visibility(value: Any) -> None:
+        if isinstance(value, str) and value and value not in cameras:
+            cameras.append(value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item and item not in cameras:
+                    cameras.append(item)
+
+    _add_visibility(payload.get("visibility"))
+
+    for key in ["objects", "entered", "exited", "participants"]:
+        container = payload.get(key)
+        if isinstance(container, list):
+            entries = container
+        elif isinstance(container, dict):
+            entries = []
+            for value in container.values():
+                if isinstance(value, list):
+                    entries.extend(value)
+                elif isinstance(value, dict):
+                    entries.append(value)
+        else:
+            continue
+
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            _add_visibility(item.get("visibility"))
+
+            nested_object = item.get("object")
+            if isinstance(nested_object, dict):
+                _add_visibility(nested_object.get("visibility"))
+
+    return cameras
 
 
-def _extract_clip_window(payload: Dict[str, Any], timestamp: float) -> (float, float):
+def _to_epoch_seconds(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+
+    numeric_value = _to_float(value)
+    if numeric_value is not None:
+        return numeric_value
+
+    if isinstance(value, str):
+        converted = iso_to_frigate_timestamp(value)
+        return _to_float(converted)
+
+    return None
+
+
+def _extract_latest_region_entered_time(payload: Dict[str, Any], region_id: str) -> Optional[float]:
+    objects = payload.get("objects") if isinstance(payload, dict) else None
+    if not isinstance(objects, list):
+        return None
+
+    latest_entered: Optional[float] = None
+    for obj in objects:
+        if not isinstance(obj, dict):
+            continue
+
+        regions = obj.get("regions")
+        if not isinstance(regions, dict) or not regions:
+            continue
+
+        region_entries: List[Dict[str, Any]] = []
+        if region_id and isinstance(regions.get(region_id), dict):
+            region_entries.append(regions.get(region_id))
+        else:
+            for region_info in regions.values():
+                if isinstance(region_info, dict):
+                    region_entries.append(region_info)
+
+        for region_info in region_entries:
+            entered_raw = _first_non_empty(region_info, ["entered", "entered_time", "entry_time"])
+            entered_ts = _to_epoch_seconds(entered_raw)
+            if entered_ts is None:
+                continue
+            if latest_entered is None or entered_ts > latest_entered:
+                latest_entered = entered_ts
+
+    return latest_entered
+
+
+# Entered-time window is biased toward the past since Frigate needs time to finalize recordings.
+REGION_CLIP_PRE_ROLL_SECONDS = 8
+REGION_CLIP_POST_ROLL_SECONDS = 2
+
+
+def _extract_clip_window(payload: Dict[str, Any], timestamp: float, region_id: str = "") -> (float, float):
+    latest_entered = _extract_latest_region_entered_time(payload, region_id)
+    if latest_entered is not None:
+        return (
+            latest_entered - REGION_CLIP_PRE_ROLL_SECONDS,
+            latest_entered + REGION_CLIP_POST_ROLL_SECONDS,
+        )
+
     explicit_start = _to_float(_first_non_empty(payload, ["start_time", "startTime"]))
     explicit_end = _to_float(_first_non_empty(payload, ["end_time", "endTime"]))
     if explicit_start is not None and explicit_end is not None and explicit_end > explicit_start:
@@ -138,56 +223,32 @@ def _extract_clip_window(payload: Dict[str, Any], timestamp: float) -> (float, f
     return timestamp - 15, timestamp - 5
 
 
-def _derive_region_event_types(
+def _derive_region_labels(
     payload: Dict[str, Any],
     num_vehicles: int,
     num_pedestrians: int,
-    topic_event_type: str = "",
 ) -> List[str]:
-    event_types: List[str] = []
-    topic_event_type = (topic_event_type or "").strip().lower()
+    derived_labels: List[str] = []
 
-    def _add_event(event_name: str) -> None:
-        if event_name and event_name not in event_types:
-            event_types.append(event_name)
-
-    # Trust explicit upstream region event types when provided.
-    if topic_event_type in {"roi_entry_exit", "zone_violation", "near_miss"}:
-        _add_event(topic_event_type)
+    def _add_label(label_name: str) -> None:
+        if label_name and label_name not in derived_labels:
+            derived_labels.append(label_name)
 
     entered_raw = _first_non_empty(payload, ["entered", "entered_count", "entry_count", "entries"])
     exited_raw = _first_non_empty(payload, ["exited", "exited_count", "exit_count", "exits"])
     entered = len(entered_raw) if isinstance(entered_raw, list) else _to_int(entered_raw)
     exited = len(exited_raw) if isinstance(exited_raw, list) else _to_int(exited_raw)
-    if entered > 0 or exited > 0:
-        _add_event("roi_entry_exit")
+    has_activity = (
+        num_vehicles > 0
+        or num_pedestrians > 0
+        or entered > 0
+        or exited > 0
+        or bool(payload.get("participants"))
+    )
+    if has_activity:
+        _add_label("region_event")
 
-    restricted_zone = _first_non_empty(payload, ["restricted_zone", "restricted", "is_restricted"])
-    if restricted_zone is None:
-        zone_type = str(_first_non_empty(payload, ["zone_type", "region_type", "type"]) or "").lower()
-        restricted_zone = zone_type == "restricted"
-    total_objects = num_vehicles + num_pedestrians
-    # For region-event streams selected in UI, treat object presence as a zone-violation
-    # signal on common occupancy feeds (count/objects). Keep restricted-zone support too.
-    if (
-        total_objects > 1 and bool(restricted_zone)
-    ) or (
-        total_objects > 0 and topic_event_type in {"count", "objects"}
-    ):
-        _add_event("zone_violation")
-
-    min_distance = _to_float(_first_non_empty(payload, ["min_distance", "distance", "closest_distance"]))
-    relative_velocity = _to_float(_first_non_empty(payload, ["relative_velocity", "rel_velocity", "closing_speed"]))
-    time_window = _to_float(_first_non_empty(payload, ["time_to_collision", "ttc", "time_window"]))
-
-    has_participants = (num_vehicles > 0 and num_pedestrians > 0) or bool(payload.get("participants"))
-    distance_ok = min_distance is not None and min_distance <= NEAR_MISS_MAX_DISTANCE_M
-    velocity_ok = relative_velocity is not None and relative_velocity >= NEAR_MISS_MIN_RELATIVE_VELOCITY_MPS
-    window_ok = time_window is None or time_window <= NEAR_MISS_MAX_TIME_WINDOW_S
-    if has_participants and distance_ok and velocity_ok and window_ok:
-        _add_event("near_miss")
-
-    return event_types
+    return derived_labels
 
 
 async def process_scenescape_region_payload(payload, topic, broker_id=None):
@@ -204,49 +265,57 @@ async def process_scenescape_region_payload(payload, topic, broker_id=None):
     region_name = str(_first_non_empty(payload, ["region_name", "regionName", "zone_name", "name"]) or region_id)
     scene_name = str(_first_non_empty(payload, ["scene_name", "sceneName"]) or scene_id)
 
-    raw_camera = _first_non_empty(payload, ["camera", "camera_id", "cameraId", "id"])
-    if raw_camera:
-        scenescape_camera = f"{broker_id}-{raw_camera}" if broker_id else str(raw_camera)
-    else:
-        scenescape_camera = f"{broker_id}-region" if broker_id else "region-event"
-
-    start_time, end_time = _extract_clip_window(payload, timestamp_value)
-    topic_event_type = _extract_topic_event_type(topic)
-    event_types = _derive_region_event_types(
-        payload,
-        num_vehicles,
-        num_pedestrians,
-        topic_event_type=topic_event_type,
-    )
-
-    if not event_types:
+    raw_cameras = _extract_region_cameras_from_visibility(payload)
+    if not raw_cameras:
         logger.info(
-            " Scenescape region payload ignored: no derived event types "
-            f"(topic={topic}, vehicles={num_vehicles}, pedestrians={num_pedestrians}, topic_event_type={topic_event_type})"
+            " Scenescape region payload ignored: missing visibility cameras "
+            f"(topic={topic}, region_id={region_id}, region_name={region_name})"
         )
         return
 
-    for event_type in event_types:
-        event_data = {
-            "label": event_type,
-            "event_type": event_type,
-            "camera": scenescape_camera,
-            "start_time": start_time,
-            "end_time": end_time,
-            "num_vehicles": num_vehicles,
-            "num_pedestrians": num_pedestrians,
-            "scene_id": scene_id,
-            "scene_name": scene_name,
-            "region_id": region_id,
-            "region_name": region_name,
-            "topic_event_type": topic_event_type,
-        }
-        logger.info(f" Scenescape region event: {topic} | Derived event: {event_data}")
-        try:
-            result = await process_event(event_data, context={"source": "scenescape", "topic": topic})
-            logger.info(f" process_event completed for region event {event_type}: {result}")
-        except Exception as e:
-            logger.error(f" process_event failed for region event {event_type}: {e}", exc_info=True)
+    scenescape_cameras = [f"{broker_id}-{raw_camera}" if broker_id else str(raw_camera) for raw_camera in raw_cameras]
+
+    start_time, end_time = _extract_clip_window(payload, timestamp_value, region_id)
+    region_labels = _derive_region_labels(
+        payload,
+        num_vehicles,
+        num_pedestrians,
+    )
+
+    if not region_labels:
+        logger.info(
+            " Scenescape region payload ignored: no derived labels "
+            f"(topic={topic}, vehicles={num_vehicles}, pedestrians={num_pedestrians})"
+        )
+        return
+
+    for scenescape_camera in scenescape_cameras:
+        for derived_label in region_labels:
+            event_data = {
+                "label": derived_label,
+                "camera": scenescape_camera,
+                "start_time": start_time,
+                "end_time": end_time,
+                "num_vehicles": num_vehicles,
+                "num_pedestrians": num_pedestrians,
+                "scene_id": scene_id,
+                "scene_name": scene_name,
+                "region_id": region_id,
+                "region_name": region_name,
+            }
+            logger.info(f" Scenescape region event: {topic} | Derived event: {event_data}")
+            try:
+                result = await process_event(event_data, context={"source": "scenescape", "topic": topic})
+                logger.info(
+                    f" process_event completed for region event {derived_label} "
+                    f"on camera {scenescape_camera}: {result}"
+                )
+            except Exception as e:
+                logger.error(
+                    f" process_event failed for region event {derived_label} "
+                    f"on camera {scenescape_camera}: {e}",
+                    exc_info=True,
+                )
 
 # Convert ISO 8601 timestamp to float seconds since epoch
 def iso_to_frigate_timestamp(iso_timestamp: str) -> str:

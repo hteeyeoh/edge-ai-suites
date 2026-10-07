@@ -86,17 +86,15 @@ async def test_process_event_region_metadata_match_and_mismatch():
     rules = [
         {
             "id": "r_region",
-            "label": "near_miss",
+            "label": "region_event",
             "action": "add to search",
             "source": "scenescape",
             "region_id": "region-001",
             "scene_id": "scene-001",
-            "event_type": "near_miss",
         }
     ]
     good_event = {
-        "label": "near_miss",
-        "event_type": "near_miss",
+        "label": "region_event",
         "region_id": "region-001",
         "scene_id": "scene-001",
         "camera": "si1-camera1",
@@ -104,8 +102,7 @@ async def test_process_event_region_metadata_match_and_mismatch():
         "end_time": 2.0,
     }
     bad_event = {
-        "label": "near_miss",
-        "event_type": "near_miss",
+        "label": "region_event",
         "region_id": "region-XYZ",
         "scene_id": "scene-001",
         "camera": "si1-camera1",
@@ -129,12 +126,11 @@ async def test_process_event_region_rule_skips_camera_topic():
     rules = [
         {
             "id": "r_zone",
-            "label": "zone_violation",
+            "label": "region_event",
             "action": "add to search",
             "source": "scenescape",
             "region_id": "region-001",
             "scene_id": "scene-001",
-            "event_type": "zone_violation",
         }
     ]
     camera_event = {
@@ -173,7 +169,6 @@ async def test_process_event_camera_rule_skips_region_topic():
         "camera": "si1-camera1",
         "scene_id": "scene-001",
         "region_id": "region-001",
-        "event_type": "count",
     }
 
     with patch("service.rule_engine.get_rules", AsyncMock(return_value=rules)), \
@@ -185,3 +180,50 @@ async def test_process_event_camera_rule_skips_region_topic():
         )
         dispatch.assert_not_called()
         store.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_event_region_thresholds_multi_label_single_rule():
+    from service import rule_engine
+
+    rules = [
+        {
+            "id": "r_region_multi",
+            "label": "region_event",
+            "action": "add to search",
+            "source": "scenescape",
+            "region_id": "region-001",
+            "scene_id": "scene-001",
+            "region_thresholds": {"vehicle": 2, "pedestrian": 1},
+        }
+    ]
+
+    matching_event = {
+        "label": "region_event",
+        "region_id": "region-001",
+        "scene_id": "scene-001",
+        "num_vehicles": 3,
+        "num_pedestrians": 2,
+    }
+    non_matching_event = {
+        "label": "region_event",
+        "region_id": "region-001",
+        "scene_id": "scene-001",
+        "num_vehicles": 1,
+        "num_pedestrians": 2,
+    }
+
+    with patch("service.rule_engine.get_rules", AsyncMock(return_value=rules)), \
+         patch("service.rule_engine.dispatch_action", AsyncMock(return_value={"ok": True})) as dispatch, \
+         patch("service.rule_engine.store_response", AsyncMock()) as store:
+        await rule_engine.process_event(
+            matching_event,
+            context={"source": "scenescape", "topic": "scenescape/event/region/scene-001/region-001/count"},
+        )
+        await rule_engine.process_event(
+            non_matching_event,
+            context={"source": "scenescape", "topic": "scenescape/event/region/scene-001/region-001/count"},
+        )
+
+        assert dispatch.await_count == 1
+        assert store.await_count == 1

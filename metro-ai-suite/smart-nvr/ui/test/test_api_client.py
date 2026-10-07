@@ -89,17 +89,16 @@ def test_add_rule_region_event_id_format(mock_get, mock_post):
 
     result = add_rule(
         camera=None,
-        label="roi_entry_exit",
+        label="region_event",
         action="Add to Search",
         source="scenescape",
         region_id="region-123",
         region_name="Intersection Zone A",
         scene_id="scene-001",
-        event_type="roi_entry_exit",
     )
 
     assert result["status"] == "success"
-    assert result["rule_id"].startswith("scenescape-intersection_zone_a-roi_entry_exit-add_to_search-")
+    assert result["rule_id"].startswith("scenescape-intersection_zone_a-region_event-add_to_search-")
 
 
 # === fetch_rules ===

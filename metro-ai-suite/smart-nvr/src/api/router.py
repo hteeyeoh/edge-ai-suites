@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # --- Camera Watcher API (moved to end for formatting) ---
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from service.directory_watcher import set_camera_watcher_mapping, get_enabled_cameras
 from service.directory_watcher import upload_videos_to_dataprep
+from service.scene_region import fetch_scenes_with_retry, fetch_regions_with_retry
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from pydantic import BaseModel
 from api.endpoints.frigate_api import FrigateService
@@ -51,6 +52,16 @@ async def get_cameras():
 @router.get("/events", summary="Get list of events for a specific camera")
 async def get_camera_events(camera: str):
     return await frigate_service.get_camera_events(camera)
+
+
+@router.get("/scenes", summary="Get SceneScape scenes")
+async def get_scenescape_scenes():
+    return await asyncio.to_thread(fetch_scenes_with_retry)
+
+
+@router.get("/regions", summary="Get SceneScape regions")
+async def get_scenescape_regions(scene_id: Optional[str] = None):
+    return await asyncio.to_thread(fetch_regions_with_retry, scene_id)
 
 @router.get("/summary/{camera_name}", summary="Stream video using clip.mp4 API")
 async def summarize_video(
@@ -144,7 +155,7 @@ class Rule(BaseModel):
     region_id: str | None = None
     region_name: str | None = None
     scene_id: str | None = None
-    event_type: str | None = None
+    region_thresholds: Dict[str, int] | None = None
 
 
 @router.post("/rules/")

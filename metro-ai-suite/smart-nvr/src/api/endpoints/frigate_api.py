@@ -1,5 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import math
 import requests
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -19,12 +20,11 @@ class FrigateService:
             response.raise_for_status()
             config = response.json()
             cameras = config.get("cameras", {})
-            
+
             camera_object_map = {
                 cam_name: cam_cfg.get("objects", {}).get("track", [])
                 for cam_name, cam_cfg in cameras.items()
             }
-            print(camera_object_map)
             return camera_object_map
 
         except requests.exceptions.RequestException as e:
@@ -84,7 +84,8 @@ class FrigateService:
                 status_code=400, detail="End time must be after start time"
             )
 
-        url = f"{self.base_url}/api/{camera_name}/start/{int(start_time)}/end/{int(end_time)}/clip.mp4"
+        # Round outward so sub-second windows are never narrowed away.
+        url = f"{self.base_url}/api/{camera_name}/start/{math.floor(start_time)}/end/{math.ceil(end_time)}/clip.mp4"
         if download:
             url += "?download=1"
 

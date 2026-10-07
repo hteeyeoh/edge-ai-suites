@@ -88,6 +88,9 @@ services:
       BROKERS_CONFIG_PATH: ${BROKERS_CONFIG_PATH:-resources/broker-config/brokers.yaml}
       MAX_CONCURRENT_EVENTS: ${MAX_CONCURRENT_EVENTS:-50}
       BROKER_RECONNECT_DELAY: ${BROKER_RECONNECT_DELAY:-5.0}
+      SCENESCAPE_API_BASE_URL: "https://metro-vision-ai-app-recipe-web-1"
+      SCENESCAPE_API_USER: ${SCENESCAPE_API_USER:-}
+      SCENESCAPE_API_PASSWORD: ${SCENESCAPE_API_PASSWORD:-}
 
   nvr-event-router-ui:
     container_name: nvr-event-router-ui
@@ -114,10 +117,8 @@ services:
       API_BASE_URL: "http://nvr-event-router:8000"
       EVENT_POLL_INTERVAL: "10"
       NVR_SCENESCAPE: ${NVR_SCENESCAPE}
-      SCENESCAPE_API_BASE_URL: "https://metro-vision-ai-app-recipe-web-1"
-      SCENESCAPE_API_USER: ${SCENESCAPE_API_USER:-}
-      SCENESCAPE_API_PASSWORD: ${SCENESCAPE_API_PASSWORD:-}
       no_proxy: ${no_proxy}, frigate, nvr-event-router, ${VSS_IP}, ${VLM_SERVING_IP}
+
   mqtt-broker:
     image: eclipse-mosquitto:2.0.21
     container_name: mqtt-broker

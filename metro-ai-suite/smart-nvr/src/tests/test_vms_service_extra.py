@@ -11,6 +11,21 @@ class DummyAsyncStream:
         # body_iterator is an async iterable object directly (accessed without call)
         self.body_iterator = gen()
 
+
+def test_build_camera_candidates_skips_synthetic_region_name():
+    vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
+    candidates = vs._build_camera_candidates(
+        "si1-region-camera4", ["si1-camera1", "si1-camera2", "si1-camera3", "si1-camera4"]
+    )
+    assert candidates[0] == "si1-camera4"
+    assert "si1-region-camera4" not in candidates
+
+
+def test_build_camera_candidates_keeps_real_camera_name():
+    vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
+    candidates = vs._build_camera_candidates("si1-camera1", ["si1-camera1", "si1-camera2"])
+    assert candidates[0] == "si1-camera1"
+
 @pytest.mark.asyncio
 async def test_upload_video_to_summarizer_success(monkeypatch):
     vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
@@ -80,3 +95,79 @@ async def test_search_embeddings_success(monkeypatch):
         resp = await vs.search_embeddings("cam1", 1.0, 2.0)
         assert resp["status"] == 200
         assert resp["video_id"] == "vidAB"
+
+
+@pytest.mark.asyncio
+async def test_upload_video_to_summarizer_waits_for_recent_window_without_shrinking(monkeypatch):
+    vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
+    vs.vss_summary_url = "http://dummy-summary"
+
+    dummy_stream = DummyAsyncStream([b"x" * 200])
+    vs.frigate_service.get_clip_from_timestamps.return_value = dummy_stream
+    vs.summarization_service.video_upload.return_value = {"videoId": "vidXYZ"}
+
+    monkeypatch.setattr("service.vms_service.time.time", lambda: 100.0)
+    sleep_calls = []
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("service.vms_service.asyncio.sleep", fake_sleep)
+
+    resp = await vs.upload_video_to_summarizer("cam1", 80.0, 101.0, False, apply_end_buffer=True)
+    assert resp["status"] == 200
+    assert resp["message"] == "vidXYZ"
+
+    # end=101 + 2s buffer = 103 ready_at; now=100 -> wait 3s (not clamped/truncated).
+    assert sleep_calls == [pytest.approx(3.0, abs=1e-6)]
+
+    call = vs.frigate_service.get_clip_from_timestamps.call_args
+    assert call.args[0] == "cam1"
+    assert call.args[1] == pytest.approx(80.0, abs=1e-6)
+    assert call.args[2] == pytest.approx(101.0, abs=1e-6)
+    assert call.kwargs["download"] is True
+
+
+@pytest.mark.asyncio
+async def test_upload_video_to_summarizer_caps_wait_duration(monkeypatch):
+    vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
+    vs.vss_summary_url = "http://dummy-summary"
+
+    dummy_stream = DummyAsyncStream([b"x" * 200])
+    vs.frigate_service.get_clip_from_timestamps.return_value = dummy_stream
+    vs.summarization_service.video_upload.return_value = {"videoId": "vidXYZ"}
+
+    monkeypatch.setattr("service.vms_service.time.time", lambda: 100.0)
+    sleep_calls = []
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr("service.vms_service.asyncio.sleep", fake_sleep)
+
+    # end=150 is far in the future; wait should be capped at FRIGATE_CLIP_MAX_WAIT_SECONDS (5s).
+    resp = await vs.upload_video_to_summarizer("cam1", 80.0, 150.0, False, apply_end_buffer=True)
+    assert resp["status"] == 200
+    assert sleep_calls == [pytest.approx(5.0, abs=1e-6)]
+
+
+@pytest.mark.asyncio
+async def test_upload_video_to_summarizer_does_not_clamp_when_disabled(monkeypatch):
+    vs = VmsService(frigate_service=MagicMock(), summarization_service=MagicMock())
+    vs.vss_summary_url = "http://dummy-summary"
+
+    dummy_stream = DummyAsyncStream([b"x" * 200])
+    vs.frigate_service.get_clip_from_timestamps.return_value = dummy_stream
+    vs.summarization_service.video_upload.return_value = {"videoId": "vidXYZ"}
+
+    monkeypatch.setattr("service.vms_service.time.time", lambda: 100.0)
+
+    resp = await vs.upload_video_to_summarizer("cam1", 80.0, 120.0, False, apply_end_buffer=False)
+    assert resp["status"] == 200
+    assert resp["message"] == "vidXYZ"
+
+    call = vs.frigate_service.get_clip_from_timestamps.call_args
+    assert call.args[0] == "cam1"
+    assert call.args[1] == pytest.approx(80.0, abs=1e-6)
+    assert call.args[2] == pytest.approx(120.0, abs=1e-6)
+    assert call.kwargs["download"] is True
