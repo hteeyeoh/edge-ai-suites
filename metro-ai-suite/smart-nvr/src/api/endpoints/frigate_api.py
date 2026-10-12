@@ -16,7 +16,7 @@ class FrigateService:
     def get_camera_names(self) -> Dict[str, list]:
         """Get mapping of camera names to detected objects from Frigate"""
         try:
-            response = requests.get(f"{self.base_url}/api/config")
+            response = requests.get(f"{self.base_url}/api/config", timeout=10)
             response.raise_for_status()
             config = response.json()
             cameras = config.get("cameras", {})
@@ -90,7 +90,9 @@ class FrigateService:
             url += "?download=1"
 
         try:
-            response = requests.get(url, stream=True)
+            # Connect timeout + per-read timeout, so a stalled Frigate stream
+            # doesn't block the thread-pool worker forever.
+            response = requests.get(url, stream=True, timeout=(10, 60))
             response.raise_for_status()
             return StreamingResponse(
                 response.iter_content(chunk_size=8192),

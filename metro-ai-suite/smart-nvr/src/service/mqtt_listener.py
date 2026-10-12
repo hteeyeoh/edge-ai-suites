@@ -114,6 +114,18 @@ def _extract_region_ids(payload: Dict[str, Any], topic: str) -> (str, str):
     return str(scene_id) if scene_id else "", str(region_id) if region_id else ""
 
 
+def _throttle_key(payload: Dict[str, Any], topic: str) -> str:
+    """Build a stable throttle key so unrelated entities do not suppress each other."""
+    if topic.startswith("scenescape/event/region/"):
+        scene_id, region_id = _extract_region_ids(payload, topic)
+        if scene_id or region_id:
+            return f"region:{scene_id}:{region_id}"
+        return f"region-topic:{topic}"
+
+    # Keep camera-topic throttling shared at stream level.
+    return f"topic:{topic}"
+
+
 def _extract_region_cameras_from_visibility(payload: Dict[str, Any]) -> List[str]:
     cameras: List[str] = []
 
@@ -352,9 +364,14 @@ async def handle_scenescape_message(payload, topic, state=None, broker_id=None):
     if state is None:
         state = throttle_state
     interval = state.get("interval", SCENESCAPE_THROTTLE_INTERVAL)
+    throttle_map = state.setdefault("last_processed_by_key", {})
+    key = _throttle_key(payload, topic)
     now = time.time()
-    if now - state["last_processed"] < interval:
+    last_processed = throttle_map.get(key, 0)
+    if now - last_processed < interval:
         return
+    throttle_map[key] = now
+    # Keep legacy field updated for compatibility with tests/instrumentation.
     state["last_processed"] = now
 
     if topic.startswith("scenescape/event/region/"):

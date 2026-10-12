@@ -79,7 +79,7 @@ class SummarizationService:
     def create_summary(self, payload: SummaryPayload, base_url: str) -> dict:
         logger.debug(f"Creating summary for payload: {payload}")
         try:
-            response = requests.post(f"{base_url}/manager/summary", json=payload.dict())
+            response = requests.post(f"{base_url}/manager/summary", json=payload.dict(), timeout=30)
             response.raise_for_status()
             logger.info("Summary creation request successful.")
             logger.debug(f"Summary creation response: {response.json()}")
@@ -93,7 +93,7 @@ class SummarizationService:
     def get_summary_result(self, pipeline_id: str, base_url: str) -> dict:
         logger.debug(f"Fetching summary result for pipeline_id: {pipeline_id}")
         try:
-            response = requests.get(f"{base_url}/manager/summary/{pipeline_id}")
+            response = requests.get(f"{base_url}/manager/summary/{pipeline_id}", timeout=10)
             response.raise_for_status()
 
             json_data = response.json()

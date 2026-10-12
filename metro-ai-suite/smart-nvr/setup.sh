@@ -407,7 +407,8 @@ brokers:
   name: SI Node 1
   host: ${HOST_IP}
   port: ${SCENESCAPE_MQTT_PORT:-1883}
-  topic: ${SCENESCAPE_MQTT_TOPIC:-scenescape/data/camera/#}
+  camera_topic: ${SCENESCAPE_MQTT_TOPIC:-scenescape/data/camera/#}
+  region_topic: ${SCENESCAPE_REGION_MQTT_TOPIC:-scenescape/event/region/+/+/+}
   type: scenescape
   use_tls: true
   throttle_interval: ${SCENESCAPE_THROTTLE_INTERVAL:-2.0}

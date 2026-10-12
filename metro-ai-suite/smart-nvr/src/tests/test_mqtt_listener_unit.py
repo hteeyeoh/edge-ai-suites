@@ -277,3 +277,75 @@ async def test_region_topic_emits_event_per_visibility_camera():
         "si1-region-camera3",
         "si1-region-camera1",
     ]
+
+
+@pytest.mark.asyncio
+async def test_region_throttle_isolated_by_region_id_key():
+    payload_a = {
+        "timestamp": "2026-10-05T10:00:00Z",
+        "scene_id": "scene-001",
+        "region_id": "region-001",
+        "entered": 1,
+        "visibility": ["camera1"],
+    }
+    payload_b = {
+        "timestamp": "2026-10-05T10:00:01Z",
+        "scene_id": "scene-001",
+        "region_id": "region-002",
+        "entered": 1,
+        "visibility": ["camera1"],
+    }
+    state = {"last_processed": 0, "interval": 2.0}
+
+    with (
+        patch("service.mqtt_listener.time.time", return_value=100.0),
+        patch("service.mqtt_listener.process_event", AsyncMock(return_value={"ok": True})) as mock_process,
+    ):
+        await mqtt_listener.handle_scenescape_message(
+            payload_a,
+            "scenescape/event/region/scene-001/region-001/count",
+            state=state,
+            broker_id="si1",
+        )
+        await mqtt_listener.handle_scenescape_message(
+            payload_b,
+            "scenescape/event/region/scene-001/region-002/count",
+            state=state,
+            broker_id="si1",
+        )
+
+    assert mock_process.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_camera_throttle_shared_across_camera_ids():
+    payload_a = {
+        "timestamp": "2026-10-05T10:00:00Z",
+        "id": "camera-a",
+        "objects": {"vehicle": [{"id": "v1"}], "pedestrian": []},
+    }
+    payload_b = {
+        "timestamp": "2026-10-05T10:00:01Z",
+        "id": "camera-b",
+        "objects": {"vehicle": [{"id": "v2"}], "pedestrian": []},
+    }
+    state = {"last_processed": 0, "interval": 2.0}
+
+    with (
+        patch("service.mqtt_listener.time.time", return_value=100.0),
+        patch("service.mqtt_listener.process_event", AsyncMock(return_value={"ok": True})) as mock_process,
+    ):
+        await mqtt_listener.handle_scenescape_message(
+            payload_a,
+            "scenescape/data/camera/#",
+            state=state,
+            broker_id="si1",
+        )
+        await mqtt_listener.handle_scenescape_message(
+            payload_b,
+            "scenescape/data/camera/#",
+            state=state,
+            broker_id="si1",
+        )
+
+    assert mock_process.await_count == 1

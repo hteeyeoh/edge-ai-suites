@@ -16,11 +16,15 @@ def _patch_stateful_redis(monkeypatch, initial_brokers=None):
     async def fake_save_broker(broker_id, broker_data, _request=None):
         store[broker_id] = {"id": broker_id, **broker_data}
 
+    async def fake_delete_broker(broker_id, _request=None):
+        return store.pop(broker_id, None) is not None
+
     async def fake_sync_yaml_from_redis(request=None, path=None):
         return None
 
     monkeypatch.setattr(broker_manager.redis_store, "get_brokers", fake_get_brokers)
     monkeypatch.setattr(broker_manager.redis_store, "save_broker", fake_save_broker)
+    monkeypatch.setattr(broker_manager.redis_store, "delete_broker", fake_delete_broker)
     monkeypatch.setattr(broker_manager, "sync_yaml_from_redis", fake_sync_yaml_from_redis)
     return store
 
@@ -39,7 +43,8 @@ def _patch_scenescape_env(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_load_yaml_brokers_seeds_camera_and_region(monkeypatch, tmp_path):
-    """When no YAML entries and no existing SceneScape brokers, seed both defaults."""
+    """When no YAML entries and no existing SceneScape brokers, seed a single
+    si1 broker covering both default topics."""
 
     store = _patch_stateful_redis(monkeypatch)
     _patch_scenescape_env(monkeypatch)
@@ -50,15 +55,16 @@ async def test_load_yaml_brokers_seeds_camera_and_region(monkeypatch, tmp_path):
     await broker_manager.load_yaml_brokers(path=str(path))
 
     assert "si1" in store
-    assert "si1-region" in store
-    assert store["si1"]["topic"] == "scenescape/data/camera/#"
-    assert store["si1-region"]["topic"] == "scenescape/event/region/+/+/+"
+    assert "si1-region" not in store
+    assert store["si1"]["camera_topic"] == "scenescape/data/camera/#"
+    assert store["si1"]["region_topic"] == "scenescape/event/region/+/+/+"
 
 
 @pytest.mark.asyncio
 async def test_load_yaml_brokers_seeds_region_when_yaml_has_camera_only(monkeypatch, tmp_path):
     """Regression: YAML pre-seeded with a camera-topic si1 (e.g. by setup.sh's
-    reset_scenescape_brokers_to_local) must not block seeding the region broker."""
+    reset_scenescape_brokers_to_local) must get the region topic merged in,
+    not spawn a separate broker connection."""
 
     store = _patch_stateful_redis(monkeypatch)
     _patch_scenescape_env(monkeypatch)
@@ -70,17 +76,17 @@ async def test_load_yaml_brokers_seeds_region_when_yaml_has_camera_only(monkeypa
         "  name: SI Node 1\n"
         "  host: 10.223.23.28\n"
         "  port: 1883\n"
-        "  topic: scenescape/data/camera/#\n"
+        "  camera_topic: scenescape/data/camera/#\n"
         "  type: scenescape\n"
         "  use_tls: true\n"
     )
 
     await broker_manager.load_yaml_brokers(path=str(path))
 
-    assert "si1-region" in store
-    assert store["si1-region"]["topic"] == "scenescape/event/region/+/+/+"
+    assert "si1-region" not in store
+    assert store["si1"]["region_topic"] == "scenescape/event/region/+/+/+"
     # Pre-existing YAML camera entry is left untouched, not duplicated/overwritten.
-    assert store["si1"]["topic"] == "scenescape/data/camera/#"
+    assert store["si1"]["camera_topic"] == "scenescape/data/camera/#"
 
 
 def test_reason_code_to_int_handles_common_shapes():

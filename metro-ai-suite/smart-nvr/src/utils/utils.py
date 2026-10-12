@@ -66,6 +66,7 @@ def upload_single_video_with_retry(file_path, max_retries=3):
                     f"{VSS_SEARCH_URL}/manager/videos/",
                     files=files,
                     data=data,
+                    timeout=30,
                 )
                 upload_response.raise_for_status()
 
@@ -114,7 +115,7 @@ def submit_embedding_batch(video_ids, max_retries=3):
     endpoint = f"{VSS_SEARCH_URL}/manager/videos/search-embeddings-batch"
     for attempt in range(1, max_retries + 1):
         try:
-            response = requests.post(endpoint, json={"videoIds": video_ids})
+            response = requests.post(endpoint, json={"videoIds": video_ids}, timeout=15)
             response.raise_for_status()
             job_id = response.json().get("job_id")
             if not job_id:
@@ -148,7 +149,7 @@ def wait_for_embedding_batch(job_id):
 
     while time.monotonic() < deadline:
         try:
-            response = requests.get(endpoint)
+            response = requests.get(endpoint, timeout=10)
             response.raise_for_status()
             status = response.json()
             state = status.get("state")

@@ -36,7 +36,8 @@ brokers:
     name: Smart Intersection 1
     host: <si1_mqtt_ip>               # MQTT broker IP
     port: 1883
-    topic: scenescape/data/camera/#
+    camera_topic: scenescape/data/camera/#
+    region_topic: scenescape/event/region/+/+/+
     type: scenescape
     throttle_interval: 2.0
     enabled: true
@@ -47,7 +48,8 @@ brokers:
     name: Smart Intersection 2
     host: <si2_mqtt_ip>
     port: 1883
-    topic: scenescape/data/camera/#
+    camera_topic: scenescape/data/camera/#
+    region_topic: scenescape/event/region/+/+/+
     type: scenescape
     throttle_interval: 2.0
     enabled: true
@@ -64,7 +66,9 @@ brokers:
 | `id` | ✅ | — | Unique identifier. Must match the Frigate camera name prefix (e.g. `si1` → `si1-camera*`). |
 | `name` | ✅ | — | Human-readable label. |
 | `host` | ✅ | — | MQTT broker IP address. |
-| `topic` | ✅ | — | MQTT topic to subscribe to. |
+| `camera_topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | MQTT topic for camera-stream events. One connection subscribes to all topics set on the broker. |
+| `region_topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | MQTT topic for region-stream events. |
+| `topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | Single-topic form. Used for non-SceneScape (e.g. `frigate`-type) brokers, or kept for legacy single-stream configs. |
 | `port` | — | `1883` | MQTT broker port. |
 | `type` | — | `scenescape` | Event type. Always `scenescape` for SI nodes. |
 | `use_tls` | — | `true` | Enable TLS. Set to `false` for plain MQTT brokers. |
@@ -178,7 +182,8 @@ curl -X POST $BASE/brokers/ \
     "id": "si3",
     "name": "Smart Intersection 3",
     "host": "<si3_mqtt_ip>",
-    "topic": "scenescape/data/camera/#",
+    "camera_topic": "scenescape/data/camera/#",
+    "region_topic": "scenescape/event/region/+/+/+",
     "rtsp_host": "<si3_rtsp_ip>",
     "rtsp_port": 8557
   }'
@@ -190,7 +195,8 @@ curl -X PUT $BASE/brokers/si3 \
     "id": "si3",
     "name": "SI 3 updated",
     "host": "<si3_ip_updated>",
-    "topic": "scenescape/data/camera/#",
+    "camera_topic": "scenescape/data/camera/#",
+    "region_topic": "scenescape/event/region/+/+/+",
     "enabled": true
   }'
 
@@ -223,8 +229,8 @@ error if a resolved node (has an `rtsp_host`) has no `rtsp_port` from either sou
 # Confirm all broker tasks started
 docker logs nvr-event-router | grep "subscribed to"
 # Expected:
-#   [si1] subscribed to scenescape/data/camera/# at <si1_ip>:1883
-#   [si2] subscribed to scenescape/data/camera/# at <si2_ip>:1883
+#   [si1] subscribed to ['scenescape/data/camera/#', 'scenescape/event/region/+/+/+'] at <si1_ip>:1883
+#   [si2] subscribed to ['scenescape/data/camera/#', 'scenescape/event/region/+/+/+'] at <si2_ip>:1883
 
 # Monitor live events
 docker logs nvr-event-router -f | grep "Scenescape event"

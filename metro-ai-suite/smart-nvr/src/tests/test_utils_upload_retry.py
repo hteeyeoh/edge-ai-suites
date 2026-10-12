@@ -94,7 +94,7 @@ def test_upload_videos_to_dataprep_skips_duplicates(tmp_path, monkeypatch):
 def test_submit_embedding_batch(monkeypatch):
     posted = {}
 
-    def fake_post(url, json):
+    def fake_post(url, json, **kwargs):
         posted["url"] = url
         posted["json"] = json
         return DummyResp({"job_id": "job-7", "accepted": 2})
@@ -121,7 +121,7 @@ def test_wait_for_embedding_batch(monkeypatch):
             ),
         ]
     )
-    monkeypatch.setattr("utils.utils.requests.get", lambda url: next(responses))
+    monkeypatch.setattr("utils.utils.requests.get", lambda url, **kwargs: next(responses))
     monkeypatch.setattr("utils.utils.time.sleep", lambda _: None)
 
     status = wait_for_embedding_batch("job-8")
