@@ -581,7 +581,7 @@ def create_ui():
                 )
 
             # Tab 3: Auto-Route Rules
-            with gr.TabItem("Auto-Route Events"):
+            with gr.TabItem("Auto-Route Events") as auto_route_tab:
                 scene_choices = get_scene_choices()
                 default_scene_id = scene_choices[0][1] if scene_choices else None
                 region_choices = get_region_choices(default_scene_id)
@@ -862,6 +862,18 @@ def create_ui():
                     fn=refresh_regions_for_scene,
                     inputs=[scene_dropdown],
                     outputs=[region_dropdown, region_api_status],
+                )
+
+                # Re-sync control visibility when returning to this tab; switching tabs
+                # can leave some hidden-tab components out of sync with topic_dropdown.
+                auto_route_tab.select(
+                    fn=update_topic_controls,
+                    inputs=[source_dropdown, topic_dropdown, scene_dropdown],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                ).then(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
                 #  Trigger label load when dropdown loads (first time)
