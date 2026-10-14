@@ -48,8 +48,82 @@ async def process_event(event: dict, context: dict = None):
             )
             continue
 
+        rule_event_type = str(rule.get("event_type") or "count").lower()
+
+        if is_region_rule and rule_event_type == "dwell_time":
+            rule_label = str(rule.get("label") or "").lower()
+            if rule_label not in ("vehicle", "pedestrian"):
+                logger.debug("Rule did not match: dwell_time requires label vehicle or pedestrian.")
+                continue
+
+            duration_threshold = rule.get("duration_seconds")
+            if duration_threshold is None:
+                logger.debug("Rule did not match: dwell_time missing duration_seconds.")
+                continue
+
+            try:
+                duration_threshold_value = float(duration_threshold)
+            except (TypeError, ValueError):
+                logger.debug("Rule did not match: dwell_time threshold is invalid.")
+                continue
+
+            max_dwell_by_label = event.get("max_dwell_by_label")
+            if not isinstance(max_dwell_by_label, dict):
+                logger.debug("Rule did not match: dwell_time event missing max_dwell_by_label.")
+                continue
+
+            dwell_value = max_dwell_by_label.get(rule_label)
+            if dwell_value is None:
+                logger.debug("Rule did not match: dwell_time event missing dwell for label %s.", rule_label)
+                continue
+
+            try:
+                dwell_value = float(dwell_value)
+            except (TypeError, ValueError):
+                logger.debug("Rule did not match: dwell_time dwell value is invalid.")
+                continue
+
+            if dwell_value < duration_threshold_value:
+                logger.debug(
+                    "Rule did not match: dwell %.3f below threshold %.3f.",
+                    dwell_value,
+                    duration_threshold_value,
+                )
+                continue
+
+        if is_region_rule and rule_event_type == "near_miss":
+            distance_threshold = rule.get("near_miss_distance_m")
+            if distance_threshold is None:
+                logger.debug("Rule did not match: near_miss missing near_miss_distance_m.")
+                continue
+
+            try:
+                distance_threshold_value = float(distance_threshold)
+            except (TypeError, ValueError):
+                logger.debug("Rule did not match: near_miss threshold is invalid.")
+                continue
+
+            event_distance = event.get("near_miss_min_distance_m")
+            if event_distance is None:
+                logger.debug("Rule did not match: near_miss event missing near_miss_min_distance_m.")
+                continue
+
+            try:
+                event_distance_value = float(event_distance)
+            except (TypeError, ValueError):
+                logger.debug("Rule did not match: near_miss event distance is invalid.")
+                continue
+
+            if event_distance_value >= distance_threshold_value:
+                logger.debug(
+                    "Rule did not match: near_miss distance %.3f above/equal threshold %.3f.",
+                    event_distance_value,
+                    distance_threshold_value,
+                )
+                continue
+
         region_thresholds = rule.get("region_thresholds") if is_region_rule else None
-        if region_thresholds:
+        if region_thresholds and not (is_region_rule and rule_event_type in {"dwell_time", "near_miss"}):
             matched_all_thresholds = True
             for label_name, threshold in region_thresholds.items():
                 normalized_label = str(label_name).lower()
@@ -80,7 +154,7 @@ async def process_event(event: dict, context: dict = None):
             if not matched_all_thresholds:
                 continue
         else:
-            if rule.get("label") != event.get("label"):
+            if not (is_region_rule and rule_event_type in {"dwell_time", "near_miss"}) and rule.get("label") != event.get("label"):
                 logger.debug("Rule did not match: label mismatch.")
                 continue
 

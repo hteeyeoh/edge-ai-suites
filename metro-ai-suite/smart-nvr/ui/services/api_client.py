@@ -168,6 +168,8 @@ def add_rule(
     scene_id: Optional[str] = None,
     region_thresholds: Optional[Dict[str, int]] = None,
     event_type: Optional[str] = None,
+    duration_seconds: Optional[int] = None,
+    near_miss_distance_m: Optional[float] = None,
 ) -> Dict:
     # Normalize inputs
     normalized_action = action.lower()
@@ -188,6 +190,12 @@ def add_rule(
         rule_content += f"-{thresholds_key}"
     if count is not None:
         rule_content += f"-{count}"
+    if event_type:
+        rule_content += f"-{event_type}"
+    if duration_seconds is not None:
+        rule_content += f"-{duration_seconds}"
+    if near_miss_distance_m is not None:
+        rule_content += f"-{near_miss_distance_m}"
 
     hash = hashlib.md5(rule_content.encode(), usedforsecurity=False).hexdigest()[:8]  # 8-char hash
     is_region_event_rule = (
@@ -253,6 +261,10 @@ def add_rule(
         payload["region_thresholds"] = region_thresholds
     if event_type:
         payload["event_type"] = event_type
+    if duration_seconds is not None:
+        payload["duration_seconds"] = duration_seconds
+    if near_miss_distance_m is not None:
+        payload["near_miss_distance_m"] = near_miss_distance_m
 
     try:
         response = requests.post(f"{API_BASE_URL}/rules/", json=payload)

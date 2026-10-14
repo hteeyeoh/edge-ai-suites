@@ -9,11 +9,16 @@ import importlib
 
 def test_main_fastapi_startup_and_root(monkeypatch):
     """Validate FastAPI root responds while suppressing startup side-effects."""
-    monkeypatch.setattr("src.main.restore_camera_watchers_from_redis", AsyncMock())
-    monkeypatch.setattr("src.main.start_frigate_client", AsyncMock())
-    monkeypatch.setattr("src.main.redis.from_url", lambda *a, **k: AsyncMock())
+    import src.main as main
 
-    from src.main import app  # import after patches
+    monkeypatch.setattr(main, "NVR_SCENESCAPE_ENABLED", False)
+    monkeypatch.setattr(main, "restore_camera_watchers_from_redis", AsyncMock())
+    monkeypatch.setattr(main, "start_frigate_client", AsyncMock())
+    monkeypatch.setattr(main.broker_manager, "load_yaml_brokers", AsyncMock())
+    monkeypatch.setattr(main.broker_manager, "start_all_from_redis", AsyncMock())
+    monkeypatch.setattr(main.redis, "from_url", lambda *a, **k: AsyncMock())
+
+    app = main.app
 
     with TestClient(app) as client:
         resp = client.get("/")

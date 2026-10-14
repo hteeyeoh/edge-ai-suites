@@ -101,6 +101,54 @@ def test_add_rule_region_event_id_format(mock_get, mock_post):
     assert result["rule_id"].startswith("scenescape-intersection_zone_a-region_event-add_to_search-")
 
 
+@patch("ui.services.api_client.requests.post")
+@patch("ui.services.api_client.requests.get")
+def test_add_rule_region_dwell_time_payload(mock_get, mock_post):
+    mock_get.return_value = MagicMock(status_code=404)
+    mock_post.return_value = MagicMock(status_code=200)
+
+    result = add_rule(
+        camera=None,
+        label="vehicle",
+        action="Add to Search",
+        source="scenescape",
+        region_id="region-123",
+        region_name="Intersection Zone A",
+        scene_id="scene-001",
+        event_type="dwell_time",
+        duration_seconds=12,
+    )
+
+    assert result["status"] == "success"
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["event_type"] == "dwell_time"
+    assert payload["duration_seconds"] == 12
+
+
+@patch("ui.services.api_client.requests.post")
+@patch("ui.services.api_client.requests.get")
+def test_add_rule_region_near_miss_payload(mock_get, mock_post):
+    mock_get.return_value = MagicMock(status_code=404)
+    mock_post.return_value = MagicMock(status_code=200)
+
+    result = add_rule(
+        camera=None,
+        label="vehicle-pedestrian",
+        action="Add to Search",
+        source="scenescape",
+        region_id="region-123",
+        region_name="Intersection Zone A",
+        scene_id="scene-001",
+        event_type="near_miss",
+        near_miss_distance_m=1.75,
+    )
+
+    assert result["status"] == "success"
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload["event_type"] == "near_miss"
+    assert payload["near_miss_distance_m"] == 1.75
+
+
 # === fetch_rules ===
 @patch("ui.services.api_client.requests.get")
 def test_fetch_rules_success(mock_get):

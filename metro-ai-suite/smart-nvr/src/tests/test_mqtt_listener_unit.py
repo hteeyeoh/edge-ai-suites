@@ -49,6 +49,64 @@ def test_extract_counts_supports_counts_and_objects_list_shape():
     assert pedestrians == 1
 
 
+def test_extract_max_dwell_by_label_uses_region_scoped_max_values():
+    payload = {
+        "objects": [
+            {
+                "type": "vehicle",
+                "regions": {
+                    "region-001": {"dwell": 3.2},
+                },
+            },
+            {
+                "category": "vehicle",
+                "regions": {
+                    "region-001": {"dwell": 7.8},
+                },
+            },
+            {
+                "type": "pedestrian",
+                "regions": {
+                    "region-001": {"dwell": 2.4},
+                },
+            },
+        ]
+    }
+
+    result = mqtt_listener._extract_max_dwell_by_label(payload, "region-001")
+    assert result == {"vehicle": 7.8, "pedestrian": 2.4}
+
+
+def test_extract_min_vehicle_pedestrian_distance_uses_cross_pairs():
+    payload = {
+        "objects": [
+            {
+                "type": "vehicle",
+                "translation": [0.0, 0.0, 0.0],
+                "regions": {"region-001": {"dwell": 1.0}},
+            },
+            {
+                "type": "vehicle",
+                "translation": [8.0, 8.0, 0.0],
+                "regions": {"region-001": {"dwell": 1.0}},
+            },
+            {
+                "type": "pedestrian",
+                "translation": [1.0, 0.0, 0.0],
+                "regions": {"region-001": {"dwell": 1.0}},
+            },
+            {
+                "type": "pedestrian",
+                "translation": [20.0, 20.0, 0.0],
+                "regions": {"region-001": {"dwell": 1.0}},
+            },
+        ]
+    }
+
+    result = mqtt_listener._extract_min_vehicle_pedestrian_distance(payload, "region-001")
+    assert result == pytest.approx(1.0, abs=1e-6)
+
+
 def test_derive_region_labels_with_entered_exited_arrays():
     payload = {
         "entered": [{"id": "v1"}],

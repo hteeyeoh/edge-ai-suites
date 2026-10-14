@@ -66,9 +66,8 @@ brokers:
 | `id` | ✅ | — | Unique identifier. Must match the Frigate camera name prefix (e.g. `si1` → `si1-camera*`). |
 | `name` | ✅ | — | Human-readable label. |
 | `host` | ✅ | — | MQTT broker IP address. |
-| `camera_topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | MQTT topic for camera-stream events. One connection subscribes to all topics set on the broker. |
-| `region_topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | MQTT topic for region-stream events. |
-| `topic` | At least one of `topic`/`camera_topic`/`region_topic` | — | Single-topic form. Used for non-SceneScape (e.g. `frigate`-type) brokers, or kept for legacy single-stream configs. |
+| `camera_topic` | At least one of `camera_topic`/`region_topic` | — | MQTT topic for camera-stream events. Each topic set on the broker gets its own dedicated MQTT connection. |
+| `region_topic` | At least one of `camera_topic`/`region_topic` | — | MQTT topic for region-stream events. |
 | `port` | — | `1883` | MQTT broker port. |
 | `type` | — | `scenescape` | Event type. Always `scenescape` for SI nodes. |
 | `use_tls` | — | `true` | Enable TLS. Set to `false` for plain MQTT brokers. |

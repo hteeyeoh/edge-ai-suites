@@ -388,7 +388,7 @@ def create_ui():
             gr.update(visible=False, value=""),
         )
 
-    with gr.Blocks() as ui:
+    with gr.Blocks(title="NVR Event Router") as ui:
         gr.Markdown("## NVR Event Router")
         gr.Markdown(
             "Monitor and process events from Frigate VMS using OEP Video Search and Summarization Application."
@@ -588,108 +588,150 @@ def create_ui():
                 default_region_id = region_choices[0][1] if region_choices else None
 
                 with gr.Row():
-                    source_dropdown = gr.Dropdown(
-                        choices=["scenescape"] if show_scenescape_source else ["frigate"],
-                        label="Select Source",
-                        value="scenescape" if show_scenescape_source else "frigate",
-                    )
+                    with gr.Column(scale=8):
+                        with gr.Group():
+                            with gr.Row():
+                                source_dropdown = gr.Dropdown(
+                                    choices=["scenescape"] if show_scenescape_source else ["frigate"],
+                                    label="Select Source",
+                                    value="scenescape" if show_scenescape_source else "frigate",
+                                )
 
-                    topic_dropdown = gr.Dropdown(
-                        choices=["camera", "region"] if show_scenescape_source else ["camera"],
-                        value="camera",
-                        label="Select Topic",
-                    )
+                                topic_dropdown = gr.Dropdown(
+                                    choices=["camera", "region"] if show_scenescape_source else ["camera"],
+                                    value="camera",
+                                    label="Select Topic",
+                                )
 
-                    camera_dropdown = gr.Dropdown(
-                        choices=camera_list,
-                        value=camera_list[0] if camera_list else None,
-                        label="Select Camera",
-                        visible=True,
-                    )
+                                scene_dropdown = gr.Dropdown(
+                                    choices=scene_choices,
+                                    value=default_scene_id,
+                                    label="Scene",
+                                    visible=False,
+                                )
 
-                    scene_dropdown = gr.Dropdown(
-                        choices=scene_choices,
-                        value=default_scene_id,
-                        label="Scene",
-                        visible=False,
-                    )
+                                action_dropdown_auto = gr.Dropdown(
+                                    choices=action_choices,
+                                    value=default_action,
+                                    label="Select Action",
+                                )
 
-                    region_dropdown = gr.Dropdown(
-                        choices=region_choices,
-                        value=default_region_id,
-                        label="Select Region",
-                        visible=False,
-                    )
+                            with gr.Row():
+                                camera_dropdown = gr.Dropdown(
+                                    choices=camera_list,
+                                    value=camera_list[0] if camera_list else None,
+                                    label="Select Camera",
+                                    visible=True,
+                                )
 
-                    if show_scenescape_source:
-                        # Scenescape: fixed labels, count visible by default
-                        SCENESCAPE_LABELS = ["vehicle", "pedestrian"]
-                        label_filter = gr.Dropdown(
-                            choices=SCENESCAPE_LABELS,
-                            value=SCENESCAPE_LABELS[0],
-                            label="Detection Labels",
-                            multiselect=False,
-                        )
+                                region_dropdown = gr.Dropdown(
+                                    choices=region_choices,
+                                    value=default_region_id,
+                                    label="Select Region",
+                                    visible=False,
+                                )
 
-                        count = gr.Number(
-                            label="Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=True,
-                        )
-                        region_vehicle_count = gr.Number(
-                            label="Vehicle Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=False,
-                        )
-                        region_pedestrian_count = gr.Number(
-                            label="Pedestrian Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=False,
-                        )
-                    else:
-                        # Original layout for frigate-only
-                        count = gr.Number(
-                            label="Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=False,
-                        )
-                        region_vehicle_count = gr.Number(
-                            label="Vehicle Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=False,
-                        )
-                        region_pedestrian_count = gr.Number(
-                            label="Pedestrian Count",
-                            value=0,
-                            precision=0,
-                            interactive=True,
-                            visible=False,
-                        )
+                                region_event_type_dropdown = gr.Dropdown(
+                                    choices=[("Count", "count"), ("Dwell Time", "dwell_time"), ("Near-miss", "near_miss")],
+                                    value="count",
+                                    label="Event Type",
+                                    info="Triggers when selected labels counts meet the minimum configured value.",
+                                    visible=False,
+                                )
 
-                    if not show_scenescape_source:
-                        # Only create label_filter for frigate-only mode
-                        label_filter = gr.Dropdown(
-                            choices=[],
-                            value=None,
-                            label="Detection Labels",
-                            multiselect=False,
-                        )
+                                if show_scenescape_source:
+                                    # Scenescape: fixed labels, count visible by default
+                                    SCENESCAPE_LABELS = ["vehicle", "pedestrian"]
+                                    label_filter = gr.Dropdown(
+                                        choices=SCENESCAPE_LABELS,
+                                        value=SCENESCAPE_LABELS[0],
+                                        label="Detection Labels",
+                                        multiselect=False,
+                                    )
 
-                    action_dropdown_auto = gr.Dropdown(
-                        choices=action_choices,
-                        value=default_action,
-                        label="Select Action",
-                    )
+                                    count = gr.Number(
+                                        label="Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=True,
+                                    )
+                                    region_vehicle_count = gr.Number(
+                                        label="Vehicle Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    region_pedestrian_count = gr.Number(
+                                        label="Pedestrian Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    duration_seconds = gr.Number(
+                                        label="Duration (seconds)",
+                                        value=10,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    near_miss_distance_m = gr.Number(
+                                        label="Distance Threshold (meters)",
+                                        value=1.5,
+                                        precision=2,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                else:
+                                    # Original layout for frigate-only
+                                    count = gr.Number(
+                                        label="Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    region_vehicle_count = gr.Number(
+                                        label="Vehicle Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    region_pedestrian_count = gr.Number(
+                                        label="Pedestrian Count",
+                                        value=0,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    duration_seconds = gr.Number(
+                                        label="Duration (seconds)",
+                                        value=10,
+                                        precision=0,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+                                    near_miss_distance_m = gr.Number(
+                                        label="Distance Threshold (meters)",
+                                        value=1.5,
+                                        precision=2,
+                                        interactive=True,
+                                        visible=False,
+                                    )
+
+                                if not show_scenescape_source:
+                                    # Only create label_filter for frigate-only mode
+                                    label_filter = gr.Dropdown(
+                                        choices=[],
+                                        value=None,
+                                        label="Detection Labels",
+                                        multiselect=False,
+                                    )
+
+
                     with gr.Column(scale=0, min_width=220):
                         add_rule_btn = gr.Button("➕ Add Rule")
                         refresh_regions_btn = gr.Button(
@@ -760,11 +802,14 @@ def create_ui():
                             visible=True,
                         )
                         region_update = gr.update(visible=True)
+                        event_type_update = gr.update(visible=is_scenescape, value="count")
                         region_status_update = gr.update(visible=False, value="")
                         refresh_btn_update = gr.update(visible=True)
                         count_update = gr.update(visible=False, value=0)
                         region_vehicle_count_update = gr.update(visible=is_scenescape, value=0)
                         region_pedestrian_count_update = gr.update(visible=is_scenescape, value=0)
+                        duration_seconds_update = gr.update(visible=False, value=10)
+                        near_miss_distance_update = gr.update(visible=False, value=1.5)
                         if show_scenescape_source:
                             label_update = gr.update(
                                 choices=SCENESCAPE_LABELS,
@@ -777,11 +822,14 @@ def create_ui():
                     else:
                         scene_update = gr.update(visible=False)
                         region_update = gr.update(visible=False)
+                        event_type_update = gr.update(visible=False, value="count")
                         region_status_update = gr.update(visible=False, value="")
                         refresh_btn_update = gr.update(visible=False)
                         count_update = gr.update(visible=is_scenescape)
                         region_vehicle_count_update = gr.update(visible=False, value=0)
                         region_pedestrian_count_update = gr.update(visible=False, value=0)
+                        duration_seconds_update = gr.update(visible=False, value=10)
+                        near_miss_distance_update = gr.update(visible=False, value=1.5)
                         if show_scenescape_source:
                             label_update = gr.update(
                                 choices=SCENESCAPE_LABELS,
@@ -796,12 +844,15 @@ def create_ui():
                         camera_update,
                         scene_update,
                         region_update,
+                        event_type_update,
                         region_status_update,
                         refresh_btn_update,
                         label_update,
                         count_update,
                         region_vehicle_count_update,
                         region_pedestrian_count_update,
+                        duration_seconds_update,
+                        near_miss_distance_update,
                     )
 
                 def load_regions_if_region(topic, scene_id):
@@ -809,46 +860,139 @@ def create_ui():
                         return gr.update(), gr.update(visible=False, value="")
                     return refresh_regions_for_scene(scene_id)
 
-                def update_region_count_interactivity(topic, labels):
+                def update_event_type_controls(topic, event_type, labels):
+                    is_region = topic == "region"
+                    normalized_event_type = (event_type or "count").lower()
+
+                    if not is_region:
+                        return (
+                            gr.update(),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=False, value=10),
+                            gr.update(visible=False, value=1.5),
+                        )
+
+                    if normalized_event_type == "dwell_time":
+                        selected_labels = labels if isinstance(labels, list) else ([labels] if labels else [])
+                        selected_label = selected_labels[0] if selected_labels else SCENESCAPE_LABELS[0]
+                        return (
+                            gr.update(choices=SCENESCAPE_LABELS, value=selected_label, multiselect=False, visible=True),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=True),
+                            gr.update(visible=False, value=1.5),
+                        )
+
+                    if normalized_event_type == "near_miss":
+                        return (
+                            gr.update(choices=SCENESCAPE_LABELS, value=list(SCENESCAPE_LABELS), multiselect=True, visible=False),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=False, value=0),
+                            gr.update(visible=False, value=10),
+                            gr.update(visible=True),
+                        )
+
+                    return (
+                        gr.update(choices=SCENESCAPE_LABELS, value=list(SCENESCAPE_LABELS), multiselect=True, visible=True),
+                        gr.update(visible=True),
+                        gr.update(visible=True),
+                        gr.update(visible=False, value=10),
+                        gr.update(visible=False, value=1.5),
+                    )
+
+                def update_region_count_interactivity(topic, event_type, labels):
                     selected_labels = labels if isinstance(labels, list) else ([labels] if labels else [])
                     normalized_labels = {str(label).lower() for label in selected_labels if label}
+                    normalized_event_type = (event_type or "count").lower()
                     is_region = topic == "region"
                     return (
-                        gr.update(interactive=is_region and "vehicle" in normalized_labels),
-                        gr.update(interactive=is_region and "pedestrian" in normalized_labels),
+                        gr.update(interactive=is_region and normalized_event_type == "count" and "vehicle" in normalized_labels),
+                        gr.update(interactive=is_region and normalized_event_type == "count" and "pedestrian" in normalized_labels),
+                    )
+
+                def update_event_type_inline_info(topic, event_type):
+                    if topic != "region":
+                        return gr.update(
+                            info="Triggers when selected labels counts meet the minimum configured value.",
+                        )
+
+                    normalized_event_type = (event_type or "count").lower()
+                    if normalized_event_type == "dwell_time":
+                        return gr.update(
+                            info="Dwell Time: triggers when selected labels remain in the region for the specified duration (seconds).",
+                        )
+
+                    if normalized_event_type == "near_miss":
+                        return gr.update(
+                            info="Triggers when nearest vehicle-pedestrian distance is below the configured meter threshold.",
+                        )
+
+                    return gr.update(
+                        info="Triggers when selected labels counts meet the minimum configured value.",
                     )
 
                 topic_dropdown.change(
                     fn=update_topic_controls,
                     inputs=[source_dropdown, topic_dropdown, scene_dropdown],
-                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_event_type_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
                 ).then(
                     fn=load_regions_if_region,
                     inputs=[topic_dropdown, scene_dropdown],
                     outputs=[region_dropdown, region_api_status],
                 ).then(
+                    fn=update_event_type_controls,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[label_filter, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                ).then(
+                    fn=update_event_type_inline_info,
+                    inputs=[topic_dropdown, region_event_type_dropdown],
+                    outputs=[region_event_type_dropdown],
+                ).then(
                     fn=update_region_count_interactivity,
-                    inputs=[topic_dropdown, label_filter],
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
                     outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
                 source_dropdown.change(
                     fn=update_topic_controls,
                     inputs=[source_dropdown, topic_dropdown, scene_dropdown],
-                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_event_type_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
                 ).then(
                     fn=load_regions_if_region,
                     inputs=[topic_dropdown, scene_dropdown],
                     outputs=[region_dropdown, region_api_status],
                 ).then(
+                    fn=update_event_type_controls,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[label_filter, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                ).then(
+                    fn=update_event_type_inline_info,
+                    inputs=[topic_dropdown, region_event_type_dropdown],
+                    outputs=[region_event_type_dropdown],
+                ).then(
                     fn=update_region_count_interactivity,
-                    inputs=[topic_dropdown, label_filter],
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[region_vehicle_count, region_pedestrian_count],
+                )
+
+                region_event_type_dropdown.change(
+                    fn=update_event_type_controls,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[label_filter, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                ).then(
+                    fn=update_event_type_inline_info,
+                    inputs=[topic_dropdown, region_event_type_dropdown],
+                    outputs=[region_event_type_dropdown],
+                ).then(
+                    fn=update_region_count_interactivity,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
                     outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
                 label_filter.change(
                     fn=update_region_count_interactivity,
-                    inputs=[topic_dropdown, label_filter],
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
                     outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
@@ -869,10 +1013,18 @@ def create_ui():
                 auto_route_tab.select(
                     fn=update_topic_controls,
                     inputs=[source_dropdown, topic_dropdown, scene_dropdown],
-                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count],
+                    outputs=[camera_dropdown, scene_dropdown, region_dropdown, region_event_type_dropdown, region_api_status, refresh_regions_btn, label_filter, count, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                ).then(
+                    fn=update_event_type_controls,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[label_filter, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                ).then(
+                    fn=update_event_type_inline_info,
+                    inputs=[topic_dropdown, region_event_type_dropdown],
+                    outputs=[region_event_type_dropdown],
                 ).then(
                     fn=update_region_count_interactivity,
-                    inputs=[topic_dropdown, label_filter],
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
                     outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
@@ -893,8 +1045,20 @@ def create_ui():
                     )
 
                 ui.load(
+                    fn=update_event_type_controls,
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
+                    outputs=[label_filter, region_vehicle_count, region_pedestrian_count, duration_seconds, near_miss_distance_m],
+                )
+
+                ui.load(
+                    fn=update_event_type_inline_info,
+                    inputs=[topic_dropdown, region_event_type_dropdown],
+                    outputs=[region_event_type_dropdown],
+                )
+
+                ui.load(
                     fn=update_region_count_interactivity,
-                    inputs=[topic_dropdown, label_filter],
+                    inputs=[topic_dropdown, region_event_type_dropdown, label_filter],
                     outputs=[region_vehicle_count, region_pedestrian_count],
                 )
 
@@ -912,9 +1076,12 @@ def create_ui():
                 def add_rule_with_auto_hide(
                     source,
                     topic,
+                    event_type,
                     count_value,
                     region_vehicle_count_value,
                     region_pedestrian_count_value,
+                    duration_seconds_value,
+                    near_miss_distance_value,
                     camera,
                     scene_id,
                     region_id,
@@ -942,6 +1109,9 @@ def create_ui():
                     selected_scene_id = None
                     selected_label = label
                     selected_region_thresholds = None
+                    selected_event_type = None
+                    selected_duration_seconds = None
+                    selected_near_miss_distance_m = None
 
                     if topic == "region":
                         if not scene_id:
@@ -968,59 +1138,99 @@ def create_ui():
                         regions = fetch_scenescape_regions(scene_id=scene_id)
                         selected = next((r for r in regions if r.get("region_id") == region_id), None)
                         selected_region_name = selected.get("region_name") if selected else region_id
-                        selected_label = "region_event"
+                        selected_event_type = str(event_type or "count").lower()
 
                         if source == "scenescape":
                             selected_labels = label if isinstance(label, list) else ([label] if label else [])
                             selected_labels = [str(lbl).lower() for lbl in selected_labels if lbl]
-                            if not selected_labels:
-                                yield gr.update(
-                                    value="❌ Please select at least one Detection Label for region rules.",
-                                    visible=True,
-                                ), gr.update()
-                                time.sleep(3)
-                                yield gr.update(visible=False), gr.update()
-                                return
 
-                            selected_region_thresholds = {}
-                            if "vehicle" in selected_labels:
-                                try:
-                                    v_count = int(region_vehicle_count_value)
-                                    if v_count < 0:
-                                        raise ValueError
-                                    selected_region_thresholds["vehicle"] = v_count
-                                except (TypeError, ValueError):
+                            if selected_event_type == "dwell_time":
+                                selected_label = selected_labels[0] if selected_labels else ""
+                                if selected_label not in ["vehicle", "pedestrian"]:
                                     yield gr.update(
-                                        value="❌ Vehicle Count must be a non-negative integer.",
+                                        value="❌ Please select a Detection Label for Dwell Time rules.",
                                         visible=True,
                                     ), gr.update()
                                     time.sleep(3)
                                     yield gr.update(visible=False), gr.update()
                                     return
 
-                            if "pedestrian" in selected_labels:
                                 try:
-                                    p_count = int(region_pedestrian_count_value)
-                                    if p_count < 0:
+                                    selected_duration_seconds = int(duration_seconds_value)
+                                    if selected_duration_seconds <= 0:
                                         raise ValueError
-                                    selected_region_thresholds["pedestrian"] = p_count
                                 except (TypeError, ValueError):
                                     yield gr.update(
-                                        value="❌ Pedestrian Count must be a non-negative integer.",
+                                        value="❌ Duration (seconds) must be a positive integer.",
+                                        visible=True,
+                                    ), gr.update()
+                                    time.sleep(3)
+                                    yield gr.update(visible=False), gr.update()
+                                    return
+                            elif selected_event_type == "near_miss":
+                                selected_label = "vehicle-pedestrian"
+                                try:
+                                    selected_near_miss_distance_m = float(near_miss_distance_value)
+                                    if selected_near_miss_distance_m <= 0:
+                                        raise ValueError
+                                except (TypeError, ValueError):
+                                    yield gr.update(
+                                        value="❌ Distance Threshold (meters) must be a positive number.",
+                                        visible=True,
+                                    ), gr.update()
+                                    time.sleep(3)
+                                    yield gr.update(visible=False), gr.update()
+                                    return
+                            else:
+                                selected_label = "region_event"
+                                if not selected_labels:
+                                    yield gr.update(
+                                        value="❌ Please select at least one Detection Label for region rules.",
                                         visible=True,
                                     ), gr.update()
                                     time.sleep(3)
                                     yield gr.update(visible=False), gr.update()
                                     return
 
-                            if not selected_region_thresholds:
-                                yield gr.update(
-                                    value="❌ Please select vehicle and/or pedestrian for region rules.",
-                                    visible=True,
-                                ), gr.update()
-                                time.sleep(3)
-                                yield gr.update(visible=False), gr.update()
-                                return
+                                selected_region_thresholds = {}
+                                if "vehicle" in selected_labels:
+                                    try:
+                                        v_count = int(region_vehicle_count_value)
+                                        if v_count < 0:
+                                            raise ValueError
+                                        selected_region_thresholds["vehicle"] = v_count
+                                    except (TypeError, ValueError):
+                                        yield gr.update(
+                                            value="❌ Vehicle Count must be a non-negative integer.",
+                                            visible=True,
+                                        ), gr.update()
+                                        time.sleep(3)
+                                        yield gr.update(visible=False), gr.update()
+                                        return
+
+                                if "pedestrian" in selected_labels:
+                                    try:
+                                        p_count = int(region_pedestrian_count_value)
+                                        if p_count < 0:
+                                            raise ValueError
+                                        selected_region_thresholds["pedestrian"] = p_count
+                                    except (TypeError, ValueError):
+                                        yield gr.update(
+                                            value="❌ Pedestrian Count must be a non-negative integer.",
+                                            visible=True,
+                                        ), gr.update()
+                                        time.sleep(3)
+                                        yield gr.update(visible=False), gr.update()
+                                        return
+
+                                if not selected_region_thresholds:
+                                    yield gr.update(
+                                        value="❌ Please select vehicle and/or pedestrian for region rules.",
+                                        visible=True,
+                                    ), gr.update()
+                                    time.sleep(3)
+                                    yield gr.update(visible=False), gr.update()
+                                    return
 
                         threshold = None
 
@@ -1034,6 +1244,9 @@ def create_ui():
                         region_name=selected_region_name,
                         scene_id=selected_scene_id,
                         region_thresholds=selected_region_thresholds,
+                        event_type=selected_event_type,
+                        duration_seconds=selected_duration_seconds,
+                        near_miss_distance_m=selected_near_miss_distance_m,
                     )
                     message = (
                         resp.get("message") if isinstance(resp, dict) else str(resp)
@@ -1064,8 +1277,8 @@ def create_ui():
                 if show_scenescape_source:
                     headers.append("Count")
                     datatypes.append("str")
-                headers.extend(["Camera/Region", "Label", "Action", "Delete"])
-                datatypes.extend(["str", "str", "str", "str"])
+                headers.extend(["Camera/Region", "Event Type", "Label", "Action", "Delete"])
+                datatypes.extend(["str", "str", "str", "str", "str"])
 
                 rules_table = gr.Dataframe(
                     headers=headers,
@@ -1084,6 +1297,29 @@ def create_ui():
                             threshold_labels = sorted(r.get("region_thresholds", {}).keys())
                             if threshold_labels:
                                 label_display = ", ".join(threshold_labels)
+
+                        event_type_display = "-"
+                        if r.get("region_id") or r.get("scene_id"):
+                            normalized_event_type = str(r.get("event_type") or "count").lower()
+                            if normalized_event_type == "dwell_time":
+                                duration_value = r.get("duration_seconds")
+                                if duration_value is not None:
+                                    event_type_display = f"Dwell Time;{duration_value}"
+                                else:
+                                    event_type_display = "Dwell Time"
+                            elif normalized_event_type == "near_miss":
+                                distance_value = r.get("near_miss_distance_m")
+                                if distance_value is not None:
+                                    try:
+                                        distance_text = f"{float(distance_value):g}"
+                                    except (TypeError, ValueError):
+                                        distance_text = str(distance_value)
+                                    event_type_display = f"Near-miss;{distance_text}"
+                                else:
+                                    event_type_display = "Near-miss"
+                            else:
+                                event_type_display = "Count"
+
                         row = [r["id"], r.get("source", "frigate")]
                         if show_scenescape_source:
                             if r.get("region_thresholds"):
@@ -1094,7 +1330,7 @@ def create_ui():
                                 row.append(threshold_text)
                             else:
                                 row.append(str(r.get("count", "-")))
-                        row.extend([target_display, label_display, r.get("action", "-"), "🗑️ Delete"])
+                        row.extend([target_display, event_type_display, label_display, r.get("action", "-"), "🗑️ Delete"])
                         rows.append(row)
                     return rows
 
@@ -1126,9 +1362,12 @@ def create_ui():
                     inputs=[
                         source_dropdown,
                         topic_dropdown,
+                        region_event_type_dropdown,
                         count,
                         region_vehicle_count,
                         region_pedestrian_count,
+                        duration_seconds,
+                        near_miss_distance_m,
                         camera_dropdown,
                         scene_dropdown,
                         region_dropdown,

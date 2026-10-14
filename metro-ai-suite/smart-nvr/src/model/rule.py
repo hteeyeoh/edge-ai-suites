@@ -15,3 +15,6 @@ class Rule(BaseModel):
     region_name: str | None = None
     scene_id: str | None = None
     region_thresholds: Dict[str, int] | None = None
+    event_type: str | None = None
+    duration_seconds: int | None = None
+    near_miss_distance_m: float | None = None
